@@ -1,16 +1,15 @@
 ---
 name: project-code-style-analyzer
-description: "The deliberate project code-style capture: fan out code-style-analyzer agents (one per detected language), merge their reports into docs/PROJECT-CODE-STYLE.md, and generate + wire the inject-code-style hook that surfaces that doc at edit time, filtered to the exact file extensions the agents observed. Re-run to refresh: the same analysis, but the doc reconciles in place and the hook is rewritten only if invalid or outdated. Manual, /-only. Triggers on 'capture the project code style' or 'set up the code-style doc and hook'. NOT for architecture (project-architecture-analyzer), one language's style question (@agent-code-style-analyzer alone), or enforcing style (the per-language configs stay the enforced source)."
+description: "The deliberate project code-style capture: fan out code-style-analyzer agents (one per detected language), merge their reports into docs/PROJECT-CODE-STYLE.md, and generate the glob-scoped rule .cursor/rules/project-code-style.mdc that surfaces that doc at edit time, scoped to the exact file extensions the agents observed. Re-run to refresh: the same analysis, the doc reconciled in place and the rule regenerated from the fresh extension union. Manual, /-only. Triggers on 'capture the project code style' or 'set up the code-style doc and rule'. NOT for architecture (project-architecture-analyzer), one language's style question (@agent-code-style-analyzer alone), or enforcing style (the per-language configs stay the enforced source)."
 disable-model-invocation: true
 ---
 
-# Project Code Style Analyzer - Capture, Merge, Inject (Deliberate)
+# Project Code Style Analyzer - Capture, Merge, Attach (Deliberate)
 
-You drive the deliberate capture of a project's ACTUAL code style and make it self-serving at edit time. Three artifacts come out of a run; a re-run repeats the same analysis, then reconciles the doc in place, rewrites the hook only if it is invalid or outdated, and leaves the wiring alone:
+You drive the deliberate capture of a project's ACTUAL code style and make it self-serving at edit time. Two artifacts come out of a run; a re-run repeats the same analysis, then reconciles the doc in place and regenerates the rule from the fresh extension union:
 
 1. `docs/PROJECT-CODE-STYLE.md` - the merged style doc: how this codebase really writes each of its languages (config-enforced rules + the idioms a linter cannot encode), divergence from the house convention skills flagged. Written under the project's configured docs root (default `docs/`, per the project's AGENTS.md).
-2. `.cursor/hooks/inject-code-style.js` - a generated PreToolUse hook that injects that doc into context once per session, on the first edit of a file whose extension the analysis actually observed - so the style is in front of whoever writes code without anyone remembering to open a doc. The hook is deterministic code, so it cannot follow a docs-root remap rule at read time - when the root is relocated, this generation step bakes the configured root into the hook (see HOOK below).
-3. The `.cursor/hooks.json` wiring for that hook (idempotent - added once, kept thereafter).
+2. `.cursor/rules/project-code-style.mdc` - a generated glob-scoped rule that points at that doc, scoped to the exact file extensions the analysis observed - so the style is in front of whoever edits one of those files, without anyone remembering to open a doc. This is a rule, NOT a hook: Cursor auto-attaches a matching `.mdc` by glob as soft guidance, and hooks are the home of deterministic gates only (a code-style nudge must never block an edit).
 
 The per-language configs (`.editorconfig`, eslint/prettier, `tsconfig`, the SQL linter rules) stay the enforced source of truth; the doc records what they encode and what they cannot. Code style is NOT architecture - structure, boundaries, and patterns live in `docs/architecture/`, owned by the project-architecture-analyzer skill. Never fold one into the other.
 
@@ -39,33 +38,30 @@ Consolidate the reports into one doc - apply the `markdown-style` skill so it re
 
 Re-run: reconcile the existing doc against the fresh reports - correct what drifted, add what is new, drop what is gone.
 
-### 4. HOOK - rewrite the injector only when invalid or outdated
-Build the extension union from the agents' **Language + extensions** sections ONLY - never pad it from assumption (a WPF repo gets `cs|xaml`, an Angular repo `ts|html|scss`, an ASP.NET repo `cs` - plus whatever else was genuinely observed, e.g. `sql`). Then decide, don't blindly overwrite:
+### 4. RULE - regenerate .cursor/rules/project-code-style.mdc
+Build the extension union from the agents' **Language + extensions** sections ONLY - never pad it from assumption (a WPF repo gets `cs`/`xaml`, an Angular repo `ts`/`html`/`scss`, an ASP.NET repo `cs` - plus whatever else was genuinely observed, e.g. `sql`).
 
-1. **Check the existing `.cursor/hooks/inject-code-style.js`** (missing counts as invalid). It is CURRENT when all three hold:
-   - valid: `node --check` passes;
-   - same template generation: its `template-version:` line matches `references/inject-code-style.template.js`;
-   - same filter: the extension alternation in its `/\.( ... )$/` test equals the fresh union (order-insensitive).
-   All three hold -> leave the hook untouched, report 'hook current', skip to WIRE.
-2. **Invalid or outdated** (any check fails) -> regenerate: copy the template over it, replacing the `__EXTENSIONS__` placeholder with the pipe-joined fresh union (e.g. `cs|xaml`). The template's docs-root line (`const docsRoot = process.env.STACK_DOCS_ROOT || 'docs';`) already matches the default - leave it as-is for a project on the default root. When the project's configured docs root (per its AGENTS.md) is NOT the default, bake that value into the copied hook - the hook is deterministic code, it cannot read the remap rule at runtime, so either replace the `'docs'` fallback literal with the configured root, or set `STACK_DOCS_ROOT` in the hook's environment (e.g. `.cursor/hooks.json` env) - so the generated hook resolves the same root the doc was written under. Never hand-edit anything else in the copy or patch it in place - the template is the only source.
-3. **Verify what you (re)generated before trusting it:** `node --check`, then drive it once - pipe a fake PreToolUse JSON (`{"session_id":"test","cwd":"<root>","tool_input":{"file_path":"x.<ext>"}}`) through it and confirm it emits the `additionalContext` JSON; pipe a non-matching extension and confirm silence. Delete the test's temp marker (`$TMPDIR/cursor-codestyle-*.marker`).
+The rule is fully derived, so regenerate it WHOLESALE each run - no upsert, no hand edits to preserve. Write `.cursor/rules/project-code-style.mdc` (create `.cursor/rules/` when absent) as a valid Cursor rule: `globs` is the comma-separated `**/*.<ext>` list built from the union, `alwaysApply` is false (it attaches on a match, and only then - an always-on copy would tax every session for a doc most turns never need). Keep the body to a pointer, never a copy of the doc - the shape:
 
-This generated hook is per-project output, deliberately NOT in the stack installer's HOOKS manifest - the installer fetches only named files and prunes nothing in `.cursor/hooks/`, so `stack update` never touches it.
+```markdown
+---
+description: Project code-style awareness - generated by /project-code-style-analyzer; edit via a re-run, not by hand.
+globs: "**/*.cs,**/*.xaml"
+alwaysApply: false
+---
 
-### 5. WIRE - .cursor/hooks.json, idempotently
-Read the project's `.cursor/hooks.json` (create `{}` if absent), and ensure `hooks.PreToolUse` contains an entry whose command references `inject-code-style.js`; if missing, append:
-
-```json
-{
-  "matcher": "Edit|Write|MultiEdit",
-  "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.cursor/hooks/inject-code-style.js\"" }]
-}
+Before writing or editing one of these files, read `docs/PROJECT-CODE-STYLE.md` - it records how
+THIS codebase actually writes each of its languages: the config-enforced rules and the idioms a
+linter cannot encode. The per-language configs stay the enforced source of truth; this doc records
+what they encode and what they cannot. Soft guidance - it never blocks an edit.
 ```
 
-Parse, check, append, rewrite - never regex-edit JSON, and never remove or reorder the entries the stack installer wired. Already present (a re-run): leave it untouched.
+Point the body's doc path at the project's configured docs root (per its AGENTS.md) when that is not the default `docs/` - unlike a hook, a rule is prose the agent reads, so the path just needs to be correct in the text.
 
-### 6. REPORT
-Confirm the three artifacts (doc created/refreshed + sections touched; hook generated / rewritten-as-outdated / left current, with the extension union; wiring added/already present). Then briefly: the languages detected, the notable idioms a linter cannot enforce, and any divergence from the house skills worth attention. All three artifacts are committed files - remind the user they ship with the repo. No re-paste of the doc body - point to the file.
+**Verify what you generated before trusting it:** the frontmatter must parse as YAML (a malformed block silently drops the rule), `globs` must cover exactly the observed union, and the doc path in the body must resolve to a real file. This rule is per-project output, deliberately NOT in the stack installer's RULES manifest - the installer fetches only named files and prunes nothing in `.cursor/rules/`, so `stack update` never touches it.
+
+### 5. REPORT
+Confirm both artifacts (doc created/refreshed + sections touched; rule regenerated, with the glob union). Then briefly: the languages detected, the notable idioms a linter cannot enforce, and any divergence from the house skills worth attention. Both artifacts are committed files - remind the user they ship with the repo. No re-paste of the doc body - point to the file.
 
 ## Don't game it
 The doc records the style the code actually follows, not an aspiration - the agents' rules bind the merge too: every idiom names observed code, splits stay 'inconsistent', absent conventions stay absent. The hook filter is derived, not designed - extensions come from the reports, and the verify step in HOOK runs against the real generated file, not the template.

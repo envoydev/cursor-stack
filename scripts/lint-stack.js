@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Repo lint: keep the Cursor stack's registration surfaces in sync. The
 // installer is split into two manifests - cursor-stack.{sh,ps1} - and the
-// skills/MCP baseline is SHARED with the Claude stack in the agents-stack
-// repo (the skills are cloned from there at install; only the manifest
-// lists are duplicated, so a baseline change is a two-repo commit).
+// skills are vendored in this repo under skills/ and cloned from here at
+// install, so the installer is self-sourcing (STACK_SKILLS_REPO overrides).
 // This lint proves everything THIS repo can prove locally:
 //   1. the .sh/.ps1 twins agree on SKILLS (same set, same order) and MCPS;
 //   2. neither installer carries a PLUGINS block entry (Cursor has no
@@ -14,17 +13,20 @@
 //      installer fetches a file that no longer exists (they are fetched
 //      from THIS repo's main branch at install);
 //   4. cursor-stack.html agrees with the manifests: personal skill rows ==
-//      the active envoydev/agents-stack entries, repository rows == the
+//      the active envoydev/cursor-stack entries, repository rows == the
 //      third-party + commented inventory, hooksRules rows == the hook +
 //      rule arrays, agent rows == CURSOR_AGENTS;
 //   5. headline Skills/MCP/Hooks/Rules/Agents counts in README.md equal
 //      the manifest/array sizes (the prose numbers cannot silently lie);
-//   6. a backticked skill name in agents/*.md, rules/*.mdc, or
+//   6. the vendored skills/ dirs equal the active manifest entries and
+//      each carries a SKILL.md (a manifest entry with no dir installs
+//      nothing; a dir with no entry is never copied);
+//   7. a backticked skill name in agents/*.md, rules/*.mdc, or
 //      AGENTS.template.md resolves to a known skill (any manifest entry,
 //      active or commented), an MCP, an agent name, or the explicit
 //      non-skill allowlist - a renamed skill would otherwise rot silently
-//      (the skill CONTENT lint lives in agents-stack, next to the skills);
-//   7. no false 'Vendored from' label on a dotnet-* HTML line (house
+//      (skill CONTENT is not linted here - only name resolution);
+//   8. no false 'Vendored from' label on a dotnet-* HTML line (house
 //      dotnet-* skills are original work).
 // No dependencies. Run: node scripts/lint-stack.js
 //   -> exit 0 clean, 1 with findings.
@@ -33,32 +35,28 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const CURSOR_SH = path.join(ROOT, 'cursor-stack.sh');
-const CURSOR_PS1 = path.join(ROOT, 'cursor-stack.ps1');
+// The installer twins live beside this lint in scripts/; everything else is repo-root.
+const CURSOR_SH = path.join(__dirname, 'cursor-stack.sh');
+const CURSOR_PS1 = path.join(__dirname, 'cursor-stack.ps1');
 const README = path.join(ROOT, 'README.md');
 const STACK_HTML = path.join(ROOT, 'cursor-stack.html');
 const AGENTS_DIR = path.join(ROOT, 'agents');
 const RULES_DIR = path.join(ROOT, 'rules');
 const HOOKS_DIR = path.join(ROOT, 'hooks');
+const SKILLS_DIR = path.join(ROOT, 'skills');
 const TEMPLATE = path.join(ROOT, 'AGENTS.template.md');
 
 // Backticked kebab-case tokens that look like skill names but are not
 // (code identifiers, generated rule names, MCP servers). The master list -
-// self-pruned against the skill files - lives in agents-stack; this is the
-// subset the CURSOR surfaces (agents/rules/template) actually use, so there
-// is no reverse dead-entry check here (an entry can be live in agents-stack
-// and unused on this repo's surfaces).
+// this is the subset the CURSOR surfaces (agents/rules/template) actually
+// use, so there is no reverse dead-entry check here (an entry can be a real
+// skill and simply unused on those surfaces).
 const NON_SKILL_TOKENS = new Set([
-    'disable-model-invocation',          // Claude Code SKILL.md frontmatter field named in prose
+    'disable-model-invocation',          // SKILL.md frontmatter field named in prose
     'baseline-project-architecture',     // generated per-project awareness rule, not a skill
     'baseline-project-related-context',  // generated per-project awareness rule, not a skill
     'baseline-project-capabilities',     // generated per-project awareness rule, not a skill
     'general-purpose',                   // built-in agent type named in the template
-    'claude-hud',                        // Claude plugin named in the plugins-mapping prose
-    'csharp-lsp',                        // Claude plugin pair named in the plugins-mapping prose
-    'typescript-lsp',
-    'security-guidance',                 // Claude plugin named in the plugins-mapping prose
-    'claude-md-management',              // Claude plugin named in the plugins-mapping prose
 ]);
 
 const findings = [];
@@ -327,21 +325,21 @@ function main()
     // 7. cursor-stack.html agrees with the manifests.
     const html = fs.readFileSync(STACK_HTML, 'utf8');
 
-    // 7a. Personal rows == the active envoydev/agents-stack entries (the skill
-    //     DIRS live in agents-stack; its lint proves manifest == dirs there).
+    // 7a. Personal rows == the active envoydev/cursor-stack entries (check 8
+    //     proves those same entries equal the on-disk skills/ dirs).
     const htmlPersonal = new Set([...(html.split('const personal = {')[1] ?? '').split('};')[0]
         .matchAll(/\["([a-z0-9-]+)","/g)].map(m => m[1]));
     const personalManifest = new Set([...primary.active.keys()]
-        .filter(s => primary.active.get(s) === 'envoydev/agents-stack'));
+        .filter(s => primary.active.get(s) === 'envoydev/cursor-stack'));
     assertSameSet('personal skill', {
-        'SKILLS manifest (envoydev/agents-stack)': personalManifest,
+        'SKILLS manifest (envoydev/cursor-stack)': personalManifest,
         'cursor-stack.html personal': htmlPersonal,
     });
 
     // 7b. Repository rows == the third-party + commented inventory.
     const htmlRepo = new Set([...(html.split('const repository = [')[1] ?? '').split('\n];')[0]
         .matchAll(/\["([a-zA-Z0-9:_-]+)","/g)].map(m => m[1]));
-    const thirdPartyActive = new Set([...primary.active.keys()].filter(s => primary.active.get(s) !== 'envoydev/agents-stack'));
+    const thirdPartyActive = new Set([...primary.active.keys()].filter(s => primary.active.get(s) !== 'envoydev/cursor-stack'));
     const inventory = new Set([...thirdPartyActive, ...primary.commented.keys()]);
     for (const name of thirdPartyActive)
     {
@@ -380,10 +378,31 @@ function main()
         'cursor-stack.html agents': htmlAgents,
     });
 
-    // 8. Backticked hyphenated tokens in agents/*.md, rules/*.mdc, and
+    // 8. The vendored skills/ dirs equal the active envoydev/cursor-stack
+    //    manifest entries. The installer clones THIS repo and copies skills/,
+    //    so a manifest entry with no dir silently installs nothing, and a dir
+    //    with no entry is dead weight nothing ever copies. Each dir must also
+    //    carry the SKILL.md the Cursor skill contract requires.
+    const skillDirs = new Set(fs.existsSync(SKILLS_DIR)
+        ? fs.readdirSync(SKILLS_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
+        : []);
+    assertSameSet('skill dir', {
+        'SKILLS manifest (envoydev/cursor-stack)': personalManifest,
+        'skills/': skillDirs,
+    });
+
+    for (const dir of skillDirs)
+    {
+        if (!fs.existsSync(path.join(SKILLS_DIR, dir, 'SKILL.md')))
+        {
+            flag(`skills/${dir} has no SKILL.md - Cursor will not load it as a skill`);
+        }
+    }
+
+    // 9. Backticked hyphenated tokens in agents/*.md, rules/*.mdc, and
     //    AGENTS.template.md resolve to a known skill (any manifest entry,
     //    active or commented), an MCP, an agent name, or the allowlist. Same
-    //    case-collision rule as the agents-stack lint: a capitalized token is
+    //    case-collision rule: a capitalized token is
     //    a finding only when it case-insensitively collides with a known name.
     const resolvable = new Set([...primary.active.keys(), ...primary.commented.keys()]);
     for (const s of [...mcpsPrimary.active, ...mcpsPrimary.commented]) resolvable.add(s);
@@ -416,7 +435,7 @@ function main()
         }
     }
 
-    // 9. House dotnet-* skills are original work, not vendored copies - no
+    // 10. House dotnet-* skills are original work, not vendored copies - no
     //    'Vendored from' label on a dotnet-* HTML line.
     const provenance = /\bvendored from\b/i;
     for (const line of html.split('\n'))
@@ -438,7 +457,7 @@ function main()
         process.exit(1);
     }
 
-    console.log(`lint-stack: clean (${primary.active.size} active skill entries, ${mcpsPrimary.active.size} MCPs, `
+    console.log(`lint-stack: clean (${primary.active.size} active skill entries == ${skillDirs.size} vendored skills/ dirs, ${mcpsPrimary.active.size} MCPs, `
         + `${arrayCounts.agent} agents + ${arrayCounts.rule} rules + ${arrayCounts.hook} hooks on disk == manifests; `
         + `.sh/.ps1 twins + HTML in sync).`);
 }

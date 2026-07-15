@@ -3,21 +3,21 @@
 # cursor-stack.sh [install|update] [space] [github-cli] - install/update the CURSOR stack
 # FOR A PROJECT: every skill / MCP from cursor-stack.html (the complete toolset, not a curated
 # subset), installed INTO a project. Built-in/system CLI skills are excluded (they ship with the
-# CLI). Bash twin of cursor-stack.ps1; the Claude Code stack lives in the agents-stack repo.
+# CLI). Bash twin of cursor-stack.ps1.
 #
 # Usage - run this file directly inside the target project (install == update for Cursor):
 #   bash cursor-stack.sh install   # provision Cursor
 #   bash cursor-stack.sh update    # refresh skills + the .cursor tree
 #
-# SELF-CONTAINED .cursor/: skills copied into .cursor/skills (strict - no dependency on .claude or
-# .agents); MCPs into .cursor/mcp.json; hooks into .cursor/hooks.json (+ .cursor/hooks/). NEVER calls
-# the claude CLI. Marketplace plugins are UI-only (install them from the Cursor UI); their skill /
-# MCP / hook components are provisioned here.
+# SELF-CONTAINED .cursor/: skills copied into .cursor/skills (strict - no dependency on a shared
+# .agents store); MCPs into .cursor/mcp.json; hooks into .cursor/hooks.json (+ .cursor/hooks/).
+# Marketplace plugins are UI-only (install them from the Cursor UI); their skill / MCP / hook
+# components are provisioned here.
 #
 # Optional extras (args 2+, any order):
 #   space       -> any word; a separate memory DB (memory_<space>.db). Omit for the default shared
-#                  DB. Both agents share ~/.memory-mcp so Claude Code and Cursor see the same per-space
-#                  DB. (Cursor is self-contained under ~/.cursor; the space does not change that.)
+#                  DB. The ~/.memory-mcp root sits outside the project so recall carries across every
+#                  project. (Cursor is self-contained under ~/.cursor; the space does not change that.)
 #   github-cli  -> install the GitHub CLI (gh) via Homebrew (macOS) if missing; prompts for
 #                  `gh auth login` when unauthenticated. e.g.:
 #                    bash cursor-stack.sh install github-cli
@@ -29,7 +29,7 @@
 # active account instead):
 #   SCOPE=project  -> skills project-scoped; cursor tree -> <repo>/.cursor/  (default)
 #   SCOPE=global   -> skills -g;             cursor tree -> ~/.cursor/
-# STACK_SKILLS_REPO   skills source repo for git clone (default https://github.com/envoydev/agents-stack)
+# STACK_SKILLS_REPO   skills source repo for git clone (default https://github.com/envoydev/cursor-stack)
 # Full inventory - comment out manifest entries below to trim it to a curated subset.
 set -euo pipefail
 
@@ -40,7 +40,7 @@ case "$ACTION" in
   *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [skills-only]" >&2; exit 1 ;;
 esac
 
-# This script provisions the Cursor agent. (The Claude Code stack lives in the agents-stack repo.)
+# This script provisions the Cursor agent.
 AGENT="cursor"
 
 # Optional extras (args 2+, any order, each with a default): a space name (any word -> a separate
@@ -90,7 +90,7 @@ prerequisites_check() {
     echo "  !! python3 not found - the security-guidance hook and the Cursor/settings JSON merges will fail." >&2
     ok=false
   fi
-  # node: required by Claude Code, the convention hooks, and npx-based MCPs. Below 22.12 LTS some
+  # node: required by the convention hooks and npx-based MCPs. Below 22.12 LTS some
   # MCPs (chrome-devtools) refuse to start and die at launch with a generic JSON-RPC -32000.
   if command -v node >/dev/null 2>&1; then
     node_ver="$(node -v 2>/dev/null | sed 's/^v//')"
@@ -104,7 +104,7 @@ prerequisites_check() {
       printf '  node: %s\n' "$node_ver"
     fi
   else
-    echo "  !! node not found - Claude Code, the convention hooks, and npx-based MCPs need it." >&2
+    echo "  !! node not found - the convention hooks and npx-based MCPs need it." >&2
     ok=false
   fi
   # csharp-ls: the csharp-lsp plugin shells out to it for Roslyn diagnostics. Off $PATH and the
@@ -134,13 +134,13 @@ install_github_cli() {  # opt-in via the 'github-cli' extra; fail-soft like ever
 }
 
 # CONFIG_DIR is for path resolution only - never exported to any CLI:
-# ~/.cursor - so a cursor install has ZERO dependency on .claude or the claude CLI.
+# ~/.cursor - so a cursor install is fully self-contained.
 CONFIG_DIR="$HOME/.cursor"
 
 SERENA_CTX="ide-assistant"   # serena's --context for Cursor (generic ide-assistant)
 
-# Shared memory root - always resolved at install time so both Claude Code and Cursor point to the
-# same DB path regardless of agent.
+# Shared memory root - always resolved at install time, and deliberately outside the project so
+# recall carries across every project installed into.
 HOME_MEMORY_DIR="$HOME/.memory-mcp"
 
 if [ "$SCOPE" = "project" ]; then
@@ -153,78 +153,80 @@ fi
 
 # (1) Skills, one per line as "repo|skill" (comment a line to skip it).
 SKILLS=(
-  # Personal (envoydev/agents-stack)
-  "envoydev/agents-stack|create-ticket"             # ticket generator (bug/story/epic/task) - tracker-agnostic EN Markdown, routes to references/<type>.md
-  "envoydev/agents-stack|dev-log-convert"           # UA/EN work notes -> structured English work log; trigger 'dev-log'
-  "envoydev/agents-stack|explain-code-tutor"        # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert
-  "envoydev/agents-stack|project-quality-loop"             # autonomous review-and-fix loop pipeline over a loops/ folder of numbered prompts
-  "envoydev/agents-stack|project-architecture-quality-loop"        # deliberate analyze-assess-improve loop - the project-architecture-analyzer capture writes ARCHITECTURE.md + ASSESSMENT.md, fix cons by tier, reconcile docs; manual /-only
-  "envoydev/agents-stack|project-code-style-analyzer"    # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/PROJECT-CODE-STYLE.md, generates + wires the inject-code-style hook; manual /-only
-  "envoydev/agents-stack|project-architecture-analyzer"  # deliberate architecture capture - dispatches code-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + ASSESSMENT.md + the generated awareness rule baseline-project-architecture.md; manual /-only
-  "envoydev/agents-stack|project-version-upgrade"        # deliberate BREAKING version-event flow (framework/runtime/package major) - plan in-session via context7 + code-analyzer digests, approval gate (auto mode only on explicit user ask), staged execution via implementers + resolvers; manual /-only
-  "envoydev/agents-stack|project-capabilities"           # deliberate capabilities capture - inventories installed skills/agents/MCPs/plugins, generates the awareness rule baseline-project-capabilities.md; manual /-only
-  "envoydev/agents-stack|project-related-context"        # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.md + docs/PROJECT-RELATED-CONTEXT.md; manual /-only
-  "envoydev/agents-stack|project-build-from-scratch" # greenfield scaffolding + design->scaffold->slice-by-slice build orchestration over the pipeline
-  "envoydev/agents-stack|project-task-flow"    # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
-  "envoydev/agents-stack|project-verify-plan"      # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /code-review
-  "envoydev/agents-stack|project-implementer"              # single-chat build step: execute a verified plan task-by-task (contracts + per-task green gate + inline red-resolution, no dispatch), finish via /code-review + the done-gate
-  "envoydev/agents-stack|project-solution-design"  # single-chat designer twin: read the architecture, judge where a change fits (extend/refactor/isolate), load the stack skill for traps, decompose into an ordered plan; feeds project-verify-plan
-  "envoydev/agents-stack|project-failure-signatures" # single-chat diagnoser twin: local-runtime crash signatures (null-ref/DI/deadlock/disposed/config-drift/boundary/HTTP-status) -> where to isolate each; pairs with systematic-debugging
-  "envoydev/agents-stack|project-ci-failure-signatures"        # single-chat CI-diagnoser twin: red-pipeline signatures (compile/restore, green-locally-red-on-runner, quality-gate, signing/release, workflow-config, infra-flake) -> code-vs-environment call + route; pairs with project-failure-signatures
-  "envoydev/agents-stack|devops"           # DevOps for the .NET/Angular house: Docker multi-stage/digest-pinned/non-root, GitHub Actions CI/CD, safe expand-contract deploys, secrets/OIDC, Aspire AppHost
-  "envoydev/agents-stack|database-conventions" # cross-engine DB conventions + per-engine skill routing
-  "envoydev/agents-stack|data-security"    # SQL/data-layer security: parameterized-only injection, least-privilege DB accounts, row-level security, connection-string secrets, encryption, audit
-  "envoydev/agents-stack|typescript"       # framework-agnostic TS/JS baseline (strict typing, modules, async, JS+JSDoc)
-  "envoydev/agents-stack|angular-conventions" # Angular 17+/TS house conventions (signals, OnPush, a11y)
-  "envoydev/agents-stack|angular-material"   # Angular Material + CDK: selective imports, M3 theming, CDK primitives, harnesses
-  "envoydev/agents-stack|angular-styling"    # Angular CSS/styling: ViewEncapsulation, :host, ::ng-deep ways-out, design tokens, responsive, a11y styling
-  "envoydev/agents-stack|angular-security"   # Angular/web frontend security: XSS/DomSanitizer bypass, CSP, CSRF, no-secrets-in-bundle, token storage, SSR/TransferState
-  "envoydev/agents-stack|frontend"         # web frontend router: Angular/TS + in-skill design-quality guidance -> mobile
-  "envoydev/agents-stack|mobile"           # Ionic/Capacitor router/index over the Angular (angular-conventions) + TypeScript baselines
-  "envoydev/agents-stack|ionic"            # house Ionic/Capacitor conventions: UI, nav, lifecycle, permissions, plugin sourcing + wrapping
-  "envoydev/agents-stack|capacitor-release" # Ionic/Capacitor release pipeline: cap sync/build, iOS+Android signing, store submission, OTA, versioning, CI, symbols
-  "envoydev/agents-stack|mobile-security"  # Ionic/Capacitor mobile security: Keychain/Keystore storage, deep-link validation, permissions, cleartext/WebView hardening
-  "envoydev/agents-stack|csharp"           # C# house conventions - style, naming, async, logging, DI
-  "envoydev/agents-stack|csharp-design-patterns" # all 23 GoF patterns with modern .NET 8+ forms
-  "envoydev/agents-stack|dotnet"           # router mapping .NET work areas to specialist skills
-  "envoydev/agents-stack|dotnet-architecture-tests" # architecture fitness tests: NetArchTest (default)/ArchUnitNET - layer+dependency+naming+isolation rules as build-failing tests
-  "envoydev/agents-stack|dotnet-aspire"    # .NET Aspire local orchestration: AppHost, ServiceDefaults, service discovery, dashboard
-  "envoydev/agents-stack|dotnet-authentication" # ASP.NET Core authn/authz: JWT/OIDC/Identity, policy-based authz, secrets
-  "envoydev/agents-stack|dotnet-code-quality" # C# quality enforcement: CSharpier formatter ownership, SDK analyzers + AnalysisLevel, .editorconfig severity, TreatWarningsAsErrors (+ legacy batch promotion), Roslynator, CI gate
-  "envoydev/agents-stack|dotnet-console-apps" # console-app interface surface: CLI arg parsing (System.CommandLine 2.0/Spectre.Console.Cli/Cocona) + bot-SDK integration (Telegram/Discord/Slack/exchange) in a BackgroundService
-  "envoydev/agents-stack|dotnet-cryptography" # System.Security.Cryptography: SHA-2, AES-GCM, RSA/ECDSA, PBKDF2/Argon2id, constant-time compare
-  "envoydev/agents-stack|dotnet-error-handling" # Result + ProblemDetails (RFC 9457) + IExceptionHandler + FluentValidation
-  "envoydev/agents-stack|dotnet-grpc"      # gRPC: .proto/codegen, ASP.NET Core host, 4 streaming modes, JWT/mTLS, interceptors, health
-  "envoydev/agents-stack|dotnet-hosted-services" # worker/background-service host: BackgroundService, ExecuteAsync trap, scoped scope, PeriodicTimer, shutdown, Channels
-  "envoydev/agents-stack|dotnet-messaging" # event-driven messaging: Wolverine (MIT)/MassTransit, outbox, sagas, RabbitMQ/Azure SB
-  "envoydev/agents-stack|dotnet-migrate"   # safe migration workflow: EF schema, .NET upgrades, NuGet - rollback + verify per step
-  "envoydev/agents-stack|dotnet-minimal-api" # minimal API endpoint mechanics: MapGroup, TypedResults, endpoint filters, binding
-  "envoydev/agents-stack|dotnet-mvc-controllers" # controller-based Web API: [ApiController], attribute routing, ActionResult<T>, auto-400 filter, action filters, binding
-  "envoydev/agents-stack|dotnet-openapi"   # OpenAPI doc (Swashbuckle / built-in .NET 9+) + Scalar docs UI
-  "envoydev/agents-stack|dotnet-realtime"  # SignalR real-time: strongly-typed Hub<T>, IHubContext push, groups/presence, reconnection, JWT-over-querystring, Redis/Azure backplane
-  "envoydev/agents-stack|dotnet-security"  # OWASP Top 10 (2021) -> .NET 8 mitigations; deprecated-pattern warnings
-  "envoydev/agents-stack|dotnet-source-generators" # Roslyn IIncrementalGenerator authoring + built-in generators (GeneratedRegex/LoggerMessage/STJ)
-  "envoydev/agents-stack|dotnet-testing"   # .NET test strategy: AAA, per-layer coverage, library routing
-  "envoydev/agents-stack|dotnet-web-backend" # ASP.NET Core cross-cutting: HttpClientFactory, OpenAPI, observability
-  "envoydev/agents-stack|dotnet-winforms"  # WinForms conventions: MVP/binding, disposal, GDI leaks, high-DPI, migration
-  "envoydev/agents-stack|dotnet-wpf"       # WPF strict-MVVM conventions, bindings, virtualization
-  "envoydev/agents-stack|postgres"         # PostgreSQL engine delta: index types, JSONB, SARGability, EXPLAIN, pooling
-  "envoydev/agents-stack|sqlite"           # SQLite engine delta: WAL/single-writer, PRAGMAs, type affinity, limited ALTER
-  "envoydev/agents-stack|dotnet-data-access" # EF Core + NHibernate ORM hub (references/): DbContext, tracking, N+1, projection
-  "envoydev/agents-stack|dotnet-architecture" # architecture decision hub (references/): clean/ddd/vsa/modular/microservices
-  "envoydev/agents-stack|markdown-style" # Markdown authoring / review: syntax canon (valid) + house style overlay, two-pass procedure
-  "envoydev/agents-stack|ilspy-decompile" # decompile a .NET assembly (ilspycmd via dnx) to read real API/behavior - framework internals, NuGet source, pre-upgrade checks
-  "envoydev/agents-stack|dotnet-project-setup" # .NET solution build spine (hub, references/): src/tests layout, .slnx, Directory.Build.props, global.json, central package management, dotnet-tool pinning
-  "envoydev/agents-stack|dotnet-performance" # perf-aware .NET design (hub, references/): allocation/type design (struct vs class, Span, ValueTask) + serialization-format choice (STJ source-gen / Protobuf / MessagePack)
-  "envoydev/agents-stack|dotnet-diagnostics" # measure/diagnose a live .NET process (hub, references/): BenchmarkDotNet microbenchmarks + crash/hang/OOM dump capture & first-look SOS analysis
-  "envoydev/agents-stack|nx"               # Nx monorepo: project-graph nav + 'nx affected' scoping, generators, module-boundary tags; CLI over MCP; serena-vs-nx routing
+  # Personal (envoydev/cursor-stack)
+  "envoydev/cursor-stack|create-ticket"             # ticket generator (bug/story/epic/task) - tracker-agnostic EN Markdown, routes to references/<type>.md
+  "envoydev/cursor-stack|dev-log-convert"           # UA/EN work notes -> structured English work log; trigger 'dev-log'
+  "envoydev/cursor-stack|explain-code-tutor"        # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert
+  "envoydev/cursor-stack|project-quality-loop"             # autonomous review-and-fix loop pipeline over a loops/ folder of numbered prompts
+  "envoydev/cursor-stack|project-architecture-quality-loop"        # deliberate analyze-assess-improve loop - the project-architecture-analyzer capture writes ARCHITECTURE.md + ASSESSMENT.md, fix cons by tier, reconcile docs; manual /-only
+  "envoydev/cursor-stack|project-code-style-analyzer"    # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/PROJECT-CODE-STYLE.md, generates + wires the inject-code-style hook; manual /-only
+  "envoydev/cursor-stack|project-architecture-analyzer"  # deliberate architecture capture - dispatches code-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + ASSESSMENT.md + the generated awareness rule baseline-project-architecture.md; manual /-only
+  "envoydev/cursor-stack|project-version-upgrade"        # deliberate BREAKING version-event flow (framework/runtime/package major) - plan in-session via context7 + code-analyzer digests, approval gate (auto mode only on explicit user ask), staged execution via implementers + resolvers; manual /-only
+  "envoydev/cursor-stack|project-capabilities"           # deliberate capabilities capture - inventories installed skills/agents/MCPs/plugins, generates the awareness rule baseline-project-capabilities.md; manual /-only
+  "envoydev/cursor-stack|project-related-context"        # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.md + docs/PROJECT-RELATED-CONTEXT.md; manual /-only
+  "envoydev/cursor-stack|project-build-from-scratch" # greenfield scaffolding + design->scaffold->slice-by-slice build orchestration over the pipeline
+  "envoydev/cursor-stack|project-task-flow"    # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
+  "envoydev/cursor-stack|project-verify-plan"      # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /code-review
+  "envoydev/cursor-stack|project-implementer"              # single-chat build step: execute a verified plan task-by-task (contracts + per-task green gate + inline red-resolution, no dispatch), finish via /code-review + the done-gate
+  "envoydev/cursor-stack|project-solution-design"  # single-chat designer twin: read the architecture, judge where a change fits (extend/refactor/isolate), load the stack skill for traps, decompose into an ordered plan; feeds project-verify-plan
+  "envoydev/cursor-stack|project-failure-signatures" # single-chat diagnoser twin: local-runtime crash signatures (null-ref/DI/deadlock/disposed/config-drift/boundary/HTTP-status) -> where to isolate each; pairs with systematic-debugging
+  "envoydev/cursor-stack|project-ci-failure-signatures"        # single-chat CI-diagnoser twin: red-pipeline signatures (compile/restore, green-locally-red-on-runner, quality-gate, signing/release, workflow-config, infra-flake) -> code-vs-environment call + route; pairs with project-failure-signatures
+  "envoydev/cursor-stack|devops"           # DevOps for the .NET/Angular house: Docker multi-stage/digest-pinned/non-root, GitHub Actions CI/CD, safe expand-contract deploys, secrets/OIDC, Aspire AppHost
+  "envoydev/cursor-stack|database-conventions" # cross-engine DB conventions + per-engine skill routing
+  "envoydev/cursor-stack|data-security"    # SQL/data-layer security: parameterized-only injection, least-privilege DB accounts, row-level security, connection-string secrets, encryption, audit
+  "envoydev/cursor-stack|typescript"       # framework-agnostic TS/JS baseline (strict typing, modules, async, JS+JSDoc)
+  "envoydev/cursor-stack|angular-conventions" # Angular 17+/TS house conventions (signals, OnPush, a11y)
+  "envoydev/cursor-stack|angular-material"   # Angular Material + CDK: selective imports, M3 theming, CDK primitives, harnesses
+  "envoydev/cursor-stack|angular-styling"    # Angular CSS/styling: ViewEncapsulation, :host, ::ng-deep ways-out, design tokens, responsive, a11y styling
+  "envoydev/cursor-stack|angular-security"   # Angular/web frontend security: XSS/DomSanitizer bypass, CSP, CSRF, no-secrets-in-bundle, token storage, SSR/TransferState
+  "envoydev/cursor-stack|frontend"         # web frontend router: Angular/TS + in-skill design-quality guidance -> mobile
+  "envoydev/cursor-stack|mobile"           # Ionic/Capacitor router/index over the Angular (angular-conventions) + TypeScript baselines
+  "envoydev/cursor-stack|ionic"            # house Ionic/Capacitor conventions: UI, nav, lifecycle, permissions, plugin sourcing + wrapping
+  "envoydev/cursor-stack|capacitor-release" # Ionic/Capacitor release pipeline: cap sync/build, iOS+Android signing, store submission, OTA, versioning, CI, symbols
+  "envoydev/cursor-stack|mobile-security"  # Ionic/Capacitor mobile security: Keychain/Keystore storage, deep-link validation, permissions, cleartext/WebView hardening
+  "envoydev/cursor-stack|csharp"           # C# house conventions - style, naming, async, logging, DI
+  "envoydev/cursor-stack|csharp-design-patterns" # all 23 GoF patterns with modern .NET 8+ forms
+  "envoydev/cursor-stack|dotnet"           # router mapping .NET work areas to specialist skills
+  "envoydev/cursor-stack|dotnet-architecture-tests" # architecture fitness tests: NetArchTest (default)/ArchUnitNET - layer+dependency+naming+isolation rules as build-failing tests
+  "envoydev/cursor-stack|dotnet-aspire"    # .NET Aspire local orchestration: AppHost, ServiceDefaults, service discovery, dashboard
+  "envoydev/cursor-stack|dotnet-authentication" # ASP.NET Core authn/authz: JWT/OIDC/Identity, policy-based authz, secrets
+  "envoydev/cursor-stack|dotnet-code-quality" # C# quality enforcement: CSharpier formatter ownership, SDK analyzers + AnalysisLevel, .editorconfig severity, TreatWarningsAsErrors (+ legacy batch promotion), Roslynator, CI gate
+  "envoydev/cursor-stack|dotnet-console-apps" # console-app interface surface: CLI arg parsing (System.CommandLine 2.0/Spectre.Console.Cli/Cocona) + bot-SDK integration (Telegram/Discord/Slack/exchange) in a BackgroundService
+  "envoydev/cursor-stack|dotnet-cryptography" # System.Security.Cryptography: SHA-2, AES-GCM, RSA/ECDSA, PBKDF2/Argon2id, constant-time compare
+  "envoydev/cursor-stack|dotnet-error-handling" # Result + ProblemDetails (RFC 9457) + IExceptionHandler + FluentValidation
+  "envoydev/cursor-stack|dotnet-grpc"      # gRPC: .proto/codegen, ASP.NET Core host, 4 streaming modes, JWT/mTLS, interceptors, health
+  "envoydev/cursor-stack|dotnet-hosted-services" # worker/background-service host: BackgroundService, ExecuteAsync trap, scoped scope, PeriodicTimer, shutdown, Channels
+  "envoydev/cursor-stack|dotnet-messaging" # event-driven messaging: Wolverine (MIT)/MassTransit, outbox, sagas, RabbitMQ/Azure SB
+  "envoydev/cursor-stack|dotnet-migrate"   # safe migration workflow: EF schema, .NET upgrades, NuGet - rollback + verify per step
+  "envoydev/cursor-stack|dotnet-minimal-api" # minimal API endpoint mechanics: MapGroup, TypedResults, endpoint filters, binding
+  "envoydev/cursor-stack|dotnet-mvc-controllers" # controller-based Web API: [ApiController], attribute routing, ActionResult<T>, auto-400 filter, action filters, binding
+  "envoydev/cursor-stack|dotnet-openapi"   # OpenAPI doc (Swashbuckle / built-in .NET 9+) + Scalar docs UI
+  "envoydev/cursor-stack|dotnet-realtime"  # SignalR real-time: strongly-typed Hub<T>, IHubContext push, groups/presence, reconnection, JWT-over-querystring, Redis/Azure backplane
+  "envoydev/cursor-stack|dotnet-security"  # OWASP Top 10 (2021) -> .NET 8 mitigations; deprecated-pattern warnings
+  "envoydev/cursor-stack|dotnet-source-generators" # Roslyn IIncrementalGenerator authoring + built-in generators (GeneratedRegex/LoggerMessage/STJ)
+  "envoydev/cursor-stack|dotnet-testing"   # .NET test strategy: AAA, per-layer coverage, library routing
+  "envoydev/cursor-stack|dotnet-web-backend" # ASP.NET Core cross-cutting: HttpClientFactory, OpenAPI, observability
+  "envoydev/cursor-stack|dotnet-winforms"  # WinForms conventions: MVP/binding, disposal, GDI leaks, high-DPI, migration
+  "envoydev/cursor-stack|dotnet-wpf"       # WPF strict-MVVM conventions, bindings, virtualization
+  "envoydev/cursor-stack|postgres"         # PostgreSQL engine delta: index types, JSONB, SARGability, EXPLAIN, pooling
+  "envoydev/cursor-stack|sqlite"           # SQLite engine delta: WAL/single-writer, PRAGMAs, type affinity, limited ALTER
+  "envoydev/cursor-stack|dotnet-data-access" # EF Core + NHibernate ORM hub (references/): DbContext, tracking, N+1, projection
+  "envoydev/cursor-stack|dotnet-architecture" # architecture decision hub (references/): clean/ddd/vsa/modular/microservices
+  "envoydev/cursor-stack|markdown-style" # Markdown authoring / review: syntax canon (valid) + house style overlay, two-pass procedure
+  "envoydev/cursor-stack|docs-as-code" # docs-as-code authoring: Mermaid sequence/ER diagrams, ADRs (Nygard/MADR 4), C4 views - per-type references/
+  "envoydev/cursor-stack|ilspy-decompile" # decompile a .NET assembly (ilspycmd via dnx) to read real API/behavior - framework internals, NuGet source, pre-upgrade checks
+  "envoydev/cursor-stack|dotnet-project-setup" # .NET solution build spine (hub, references/): src/tests layout, .slnx, Directory.Build.props, global.json, central package management, dotnet-tool pinning
+  "envoydev/cursor-stack|dotnet-performance" # perf-aware .NET design (hub, references/): allocation/type design (struct vs class, Span, ValueTask) + serialization-format choice (STJ source-gen / Protobuf / MessagePack)
+  "envoydev/cursor-stack|dotnet-diagnostics" # measure/diagnose a live .NET process (hub, references/): BenchmarkDotNet microbenchmarks + crash/hang/OOM dump capture & first-look SOS analysis
+  "envoydev/cursor-stack|nx"               # Nx monorepo: project-graph nav + 'nx affected' scoping, generators, module-boundary tags; CLI over MCP; serena-vs-nx routing
 )
 
 # (3) MCP servers as "name|args"; scope follows SCOPE.
-#     @SERENA_CONTEXT@   -> resolved at install time per-agent (claude-code | ide-assistant).
-#     @HOME_MEMORY_DIR@  -> resolved at install time to ~/.memory-mcp for BOTH agents (shared DB).
-#     \${CLAUDE_PROJECT_DIR:-.} stays LITERAL so Claude Code interpolates it at server launch; for
-#       Cursor (no shell interpolation) it is resolved to a concrete path when .cursor/mcp.json is written.
+#     @SERENA_CONTEXT@   -> resolved at install time to serena's --context (ide-assistant).
+#     @HOME_MEMORY_DIR@  -> resolved at install time to ~/.memory-mcp (the cross-project DB root).
+#     \${CLAUDE_PROJECT_DIR:-.} / \${CLAUDE_CONFIG_DIR} are the shared-baseline path tokens carried
+#       verbatim from the shared MCPS baseline; Cursor does no shell interpolation, so both are
+#       resolved to concrete paths when .cursor/mcp.json is written (see write_mcp_json).
 #     memory (mcp-memory-service): a space (e.g. 'work') switches to memory_<space>.db.
 #
 # PERFORMANCE - network resolution is the cost of a slow new-session start, so it happens HERE
@@ -285,13 +287,12 @@ MCPS=(
   "$CONTEXT7_ENTRY"                           # up-to-date library/framework/SDK docs (beats recalled API knowledge)
 )
 
-# (5) Cursor hooks "filename::event" + rules. Cursor's hook contract (.cursor/hooks.json v1) differs from
-# Claude's settings.json PreToolUse, so these are CURSOR-contract scripts FETCHED from cursor/hooks (NOT
-# the Claude-contract files). The portable Bash guards map over as hooks:
+# (5) Cursor hooks "filename::event" + rules. These are CURSOR-contract scripts (.cursor/hooks.json
+# v1) fetched from this repo's hooks/. The portable Bash guards map over as hooks:
 #   - guard-protected-force-push -> beforeShellExecution (reads {command}, returns {permission}).
 #   - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
-# Convention enforcement is NOT a hook on either stack - its home is a soft, glob-auto-attaching rule
-# (.cursor/rules/*.mdc here, see CURSOR_RULES; .claude/rules on Claude), never a pre-edit block.
+# Convention enforcement is NOT a hook - its home is a soft, glob-auto-attaching rule
+# (.cursor/rules/*.mdc, see CURSOR_RULES), never a pre-edit block.
 CURSOR_HOOK_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/hooks"
 CURSOR_RULES_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/rules"
 CURSOR_HOOKS=(
@@ -301,8 +302,8 @@ CURSOR_HOOKS=(
 # A rule entry is "name" (fetched from CURSOR_RULES_BASE_URL) or "name|url" (fetched from that url -
 # the form for a third-party rule we would reference rather than vendor; currently unused).
 CURSOR_RULES=(
-  # Always-on baseline set (alwaysApply, no globs) - the cross-cutting conventions, twins of the
-  # Claude .claude/rules/baseline-*.md set; loaded every turn like AGENTS.md, installer-refreshed.
+  # Always-on baseline set (alwaysApply, no globs) - the cross-cutting conventions; loaded every
+  # turn like AGENTS.md, installer-refreshed.
   "baseline-interaction.mdc"                  # communication, adversarial proposal review, planning thresholds
   "baseline-quality-gates.mdc"                # code quality + the done-claim gate
   "baseline-security.mdc"                     # secret hygiene, /review on sensitive diffs
@@ -315,17 +316,17 @@ CURSOR_RULES=(
   "angular-conventions.mdc"                   # ng  -> angular-conventions (*.component.ts &c.)
   "wpf-conventions.mdc"                       # xaml -> dotnet-wpf
   "scss-conventions.mdc"                      # scss/css -> angular-styling
-  "ponytail.mdc"                              # ponytail 'lazy senior dev' minimal-code rule (alwaysApply) - vendored here, the Cursor form of the Claude ponytail plugin
+  "ponytail.mdc"                              # ponytail 'lazy senior dev' minimal-code rule (alwaysApply) - vendored here
 )
 
 # (6) Subagents (cursor): Cursor-native specialist agents fetched into .cursor/agents/ on BOTH actions
 # (per-agent fail-soft - an agent not yet upstream keeps any existing local copy). Cursor auto-discovers
-# .cursor/agents/*.md; no settings wiring needed. Adapted twins of all 33 Claude subagents. Cursor (2.5+)
-# has a Task tool and subagents that inherit the parent's MCP servers, so the twins carry the FULL
-# orchestration - project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers
-# dispatch evidence-gatherer, and the serena-memory handoff works (MCP is inherited). The genuine gaps that
-# remain vs Claude: `model: inherit` (Cursor documents only opus-at-high, so the model/effort tiering does
-# not reliably port - the twins inherit the session model), no per-tool `tools:` allowlist (only `readonly`),
+# .cursor/agents/*.md; no settings wiring needed. All 33 subagents. Cursor (2.5+) has a Task tool and
+# subagents that inherit the parent's MCP servers, so the roster carries the FULL orchestration -
+# project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch
+# evidence-gatherer, and the serena-memory handoff works (MCP is inherited). Cursor's platform limits
+# shape the contract: `model: inherit` (Cursor documents only opus-at-high, so effort/model cannot be
+# pinned per agent - they inherit the session model), no per-tool `tools:` allowlist (only `readonly`),
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
 CURSOR_AGENT_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/agents"
@@ -377,13 +378,13 @@ CURSOR_AGENTS=(
 # ===========================================================================
 install_skills() {
   # git-copy: clone the stack repo (depth 1) and copy each selected skills/<name>/ straight into
-  # .cursor/skills - all 64 house skills live in ONE repo (envoydev/agents-stack), so a plain copy
+  # .cursor/skills - all 65 house skills live in THIS repo (envoydev/cursor-stack), so a plain copy
   # fully reproduces what the skills CLI used to stage. STRICT independence preserved: the dest is
-  # .cursor/skills as real copies, never a dependency on .claude/skills or a shared .agents/ store
+  # .cursor/skills as real copies, never a dependency on a shared .agents/ store
   # (no separate npx-then-copy step needed any more - this writes .cursor/skills directly).
   command -v git >/dev/null 2>&1 || { log "  !! git not found - skills not installed"; return 0; }   # fail-soft: skip, never abort
   local repo_url tmp name dest entry
-  repo_url="${STACK_SKILLS_REPO:-https://github.com/envoydev/agents-stack}"
+  repo_url="${STACK_SKILLS_REPO:-https://github.com/envoydev/cursor-stack}"
   case "$SCOPE" in project) dest="$PWD/.cursor/skills" ;; *) dest="$CONFIG_DIR/skills" ;; esac
   tmp="$(mktemp -d)"
   if ! git clone --depth 1 "$repo_url" "$tmp" >/dev/null 2>&1; then
@@ -405,7 +406,7 @@ install_skills() {
 set_cursor_mcps() {
   # Write/merge Cursor's MCP config: <repo>/.cursor/mcp.json (project) or ~/.cursor/mcp.json (global).
   # Cursor does NOT do shell-style ${VAR} interpolation, so resolve those tokens to concrete paths here.
-  # Idempotency mirrors the claude path: a plain `install` SKIPS an MCP already in mcp.json (its baked
+  # Idempotency: a plain `install` SKIPS an MCP already in mcp.json (its baked
   # pin stays FROZEN); only `update` re-resolves latest and re-writes the entry (bumps the pin).
   local root proj_dir mcp_path entry name args spec tok_proj tok_cfg
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -448,7 +449,7 @@ for line in sys.stdin.read().splitlines():
     if not line.strip():
         continue
     name, spec = line.split("|", 1)
-    # Skip-if-present on plain install, matching the claude path's `claude mcp get` guard: an MCP
+    # Skip-if-present on plain install: an MCP
     # already in mcp.json keeps its baked pin (FROZEN until `update` re-resolves and re-writes it).
     # Without this a plain install would re-write the freshly-resolved latest pin and silently bump it.
     if action == "install" and name in servers:
@@ -477,7 +478,7 @@ for line in sys.stdin.read().splitlines():
             elif t == "-e":
                 k, _, v = tokens[i + 1].partition("="); env[k] = v; i += 2
             else:
-                i += 1            # ignore any other pre-`--` claude-mcp flags (not used by Cursor)
+                i += 1            # ignore any other pre-`--` mcp flags (not used by Cursor)
         else:
             if cmd is None: cmd = t
             else: cmd_args.append(t)
@@ -498,8 +499,8 @@ PY
 
 set_cursor_hooks() {
   # Fetch the CURSOR-contract hook scripts into .cursor/hooks/ and wire .cursor/hooks.json (schema v1).
-  # Mirrors the Claude path's download+wire, but from cursor/hooks (Cursor's beforeShellExecution etc.
-  # contract). Per-hook fail-soft: a hook not yet upstream keeps any existing local copy.
+  # Fetched from this repo's hooks/ (Cursor's beforeShellExecution etc. contract). Per-hook
+  # fail-soft: a hook not yet upstream keeps any existing local copy.
   command -v curl >/dev/null || { log "  !! curl not found - skipping cursor hooks"; return 0; }
   local root hooks_json hooks_dir ref_prefix node_exe entry file event cmd tmp pairs=()
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -519,7 +520,7 @@ set_cursor_hooks() {
     [ -n "$event" ] || continue
     tmp="$(mktemp)"
     if curl -fsSL "$CURSOR_HOOK_BASE_URL/$file" -o "$tmp"; then
-      # Content-compare-then-skip, matching the Claude path's download_hooks: only overwrite when the
+      # Content-compare-then-skip: only overwrite when the
       # fetched bytes differ, so an unchanged hook is left untouched (stable mtime, no noisy log).
       if [ -f "$hooks_dir/$file" ] && cmp -s "$tmp" "$hooks_dir/$file"; then rm -f "$tmp"; log "  cursor hook current: $file"
       else mv "$tmp" "$hooks_dir/$file"; chmod +x "$hooks_dir/$file"; log "  cursor hook fetched -> $file"; fi
@@ -590,7 +591,7 @@ install_cursor_rules() {
 
 install_cursor_agents() {
   # Fetch each Cursor subagent .md into .cursor/agents/ (Cursor auto-discovers them - no settings wiring).
-  # Mirrors the Claude path's download_agents: content-compare-then-skip + per-agent fail-soft (a fetch
+  # Content-compare-then-skip + per-agent fail-soft (a fetch
   # failure keeps any existing local copy). Scope follows SCOPE like the rules/skills: repo root for
   # project, $HOME for global.
   command -v curl >/dev/null || { log "  !! curl not found - skipping cursor agents"; return 0; }
@@ -676,13 +677,13 @@ fi
 prerequisites_check
 install_github_cli
 
-# Cursor path: 100% claude-free. install == update (clean re-add of skills, then refresh the .cursor tree).
+# install == update (clean re-add of skills, then refresh the .cursor tree).
 if [ "$ACTION" = "install" ]; then install_skills; else update_skills; fi
 set_cursor_mcps
 set_cursor_hooks
 install_cursor_rules
 install_cursor_agents
-log "plugins: Cursor plugins install from Cursor chat, not this script. Run '/add-plugin superpowers' in Cursor to add the superpowers workflow skills + hooks (the Cursor form of the Claude superpowers plugin). Other Claude plugins map to Cursor natives (Bugbot, AGENTS.md, Open-VSX LSP extensions); their skill / mcp / hook components are already provisioned here (+ .cursor/rules)."
+log "plugins: Cursor plugins install from Cursor chat, not this script. Run '/add-plugin superpowers' in Cursor to add the superpowers workflow skills + hooks. Everything else is a Cursor native (Bugbot, AGENTS.md, Open-VSX LSP extensions); their skill / mcp / hook components are already provisioned here (+ .cursor/rules)."
 
 prune_agents_cache
 log "done: $ACTION ($SCOPE, agent=$AGENT). ${#SKILLS[@]} skills, MCPs, cursor-hooks=${#CURSOR_HOOKS[@]}, rules=${#CURSOR_RULES[@]}, agents=${#CURSOR_AGENTS[@]}."

@@ -121,18 +121,17 @@
 </head>
 <body>
   <h1>Cursor stack inventory</h1>
-  <div class="sub">The Cursor counterpart of <code>claude-stack.html</code>. Provisioned by <code>cursor-stack.{sh,ps1}</code> into a project's self-contained <code>.cursor/</code> tree.</div>
+  <div class="sub">The full inventory provisioned by <code>cursor-stack.{sh,ps1}</code> into a project's self-contained <code>.cursor/</code> tree.</div>
 
   <div class="banner">
     <strong>Cursor has no <code>/plugin install</code> system.</strong> Capabilities arrive three ways:
     <strong>MCP servers</strong> (native, via <code>.cursor/mcp.json</code>), <strong>native features</strong>
-    (Skills, Bugbot, Rules), and <strong>Open VSX</strong> VS Code extensions. Claude marketplace plugins
-    themselves <em>cannot</em> run in Cursor - only the MCP servers bundled inside them are portable.
-    One exception worth adding manually: <code>superpowers</code> ships its own Cursor plugin - run
+    (Skills, Bugbot, Rules), and <strong>Open VSX</strong> VS Code extensions.
+    One worth adding manually: <code>superpowers</code> ships its own Cursor plugin - run
     <code>/add-plugin superpowers</code> in Cursor chat (this script can't script that UI step).
     The skills below run as <strong>Cursor Skills</strong> (<code>agentskills.io</code> standard, copied into
-    <code>.cursor/skills/</code>); MCP servers work identically to Claude. See the
-    <em>Claude plugins &rarr; Cursor equivalent</em> table for how each Claude plugin maps.
+    <code>.cursor/skills/</code>). See the <em>Capability map</em> table for how each capability is
+    delivered.
   </div>
 
   <div class="counts">
@@ -142,7 +141,7 @@
     <div><strong id="c-mcp">7</strong> MCP servers</div>
     <div><strong id="c-hooks">9</strong> hooks / rules</div>
     <div><strong id="c-agents">4</strong> subagents</div>
-    <div><strong id="c-equiv">8</strong> plugin mappings</div>
+    <div><strong id="c-equiv">8</strong> capabilities</div>
   </div>
 
   <div class="controls">
@@ -153,7 +152,7 @@
 
   <footer>
     Sources: <code>personal</code> &amp; <code>repository</code> skills installed via
-    the stack installer's git-clone + copy step (<code>cursor-stack.sh install skills-only</code>), run as Cursor Skills ·
+    the stack installer's git-clone + copy step (<code>scripts/cursor-stack.sh install skills-only</code>), run as Cursor Skills ·
     <code>MCP</code> servers written to <code>.cursor/mcp.json</code> ·
     <code>hooks</code> to <code>.cursor/hooks/</code> + <code>.cursor/hooks.json</code> ·
     <code>rules</code> to <code>.cursor/rules/</code> ·
@@ -163,12 +162,12 @@
   </footer>
 
 <script>
-// ---- Personal skills (run as Cursor Skills; same set as Claude) ----
+// ---- Personal skills (run as Cursor Skills) ----
 const personal = {
   title: "Personal skills",
-  meta: "Personal convention skills, authored locally and published to envoydev/agents-stack. Installed via the stack installer's git-clone + copy step, run as Cursor Skills.",
-  source: "https://github.com/envoydev/agents-stack",
-  install: "cursor-stack.sh install skills-only",
+  meta: "Personal convention skills, authored locally and published in this repo (envoydev/cursor-stack). Installed via the stack installer's git-clone + copy step, run as Cursor Skills.",
+  source: "https://github.com/envoydev/cursor-stack",
+  install: "scripts/cursor-stack.sh install skills-only",
   rows: [
     ["create-ticket","Tickets / tracker","Generate a bug, user story, epic, or technical task ticket in English from a raw description (Ukrainian or English input). Detects the type and routes to a per-type template (references/{bug,story,epic,task}.md). Tracker-agnostic Markdown (Jira, Azure DevOps, GitHub, GitLab, YouTrack); offers to file via a connected tracker MCP."],
     ["dev-log-convert","Logs / docs","Convert daily Ukrainian/English/mixed raw work logs into structured form. Trigger: literal 'dev-log'."],
@@ -212,23 +211,24 @@ const personal = {
     ["dotnet-wpf","WPF / Desktop","Strict MVVM, dep/attached props, explicit binding modes, async commands, INotifyDataErrorInfo validation, virtualization, VM testing. (WPF is Windows desktop - the skill installs regardless of editor.)"],
     ["project-quality-loop","Review / automation","Autonomous review-and-fix loop over a docs/loops/ folder of numbered prompts: runs each in numeric order, loops it on the target until its bar (default zero findings at every severity) is met, then advances - deciding and logging judgment calls, never pausing. Per-module on large codebases."],
     ["project-architecture-quality-loop","Review / automation","Deliberate architecture analyze-assess-improve loop: the project-architecture-analyzer capture maps the project and writes ARCHITECTURE.md + a reasoned strengths/weaknesses ASSESSMENT.md, then works the weaknesses by tier (small -> implementer, substantial -> designer-led build with plan approval, structural -> flagged for a decision), reconciles the docs, and loops. Manual, /-only - the heavy counterpart to project-quality-loop."],
-    ["project-architecture-analyzer","Review / automation","Deliberate architecture capture: maps the project (module-by-module characterization, declared-vs-enforced reconciliation) and writes docs/architecture/ARCHITECTURE.md (lean core map + references/ deep-dives), docs/architecture/ASSESSMENT.md (10 strengths + 10 tiered weaknesses), and on Claude the generated always-on awareness rule baseline-project-architecture.md. The code-analyzer fan-out is Claude-only (INLINE characterization in Cursor - the docs are still worth writing). Capture only - fixes are project-architecture-quality-loop. Manual, /-only."],
-    ["project-version-upgrade","Review / automation","Deliberate flow for any BREAKING version event - framework/runtime major, EOL, load-bearing package major: classify from the manifests, pull the breaking surface via context7, cross against located usage, sequence foundation-first with a rollback point per stage, approval gate (auto mode only on explicit ask), then staged execution with a verify gate per stage. The implementer/resolver dispatch is Claude-only (INLINE staged execution in Cursor). Manual, /-only."],
-    ["project-capabilities","Review / automation","Deliberate capabilities capture: inventories the installed skills / MCPs / (Claude-side seats) and generates the awareness rule baseline-project-capabilities.md from the real inventory - the generated rule is Claude-only (.claude/rules); in Cursor the inventory report is still worth running for orientation. Re-run after install / update / a manifest trim. Manual, /-only."],
-    ["project-code-style-analyzer","Review / automation","Deliberate project code-style capture: characterizes each detected language (config-enforced rules + idioms a linter cannot encode, house-skill divergence flagged) and merges into docs/PROJECT-CODE-STYLE.md, then generates .claude/hooks/inject-code-style.js (extension filter from the observed extensions) wired into Claude settings. The code-style-analyzer fan-out and the hook are Claude-only (INLINE characterization in Cursor - the doc is still worth writing). Manual, /-only."],
-    ["project-related-context","Review / automation","Deliberate related-projects capture, args-driven (paths or git URLs, never a scan): characterizes each named sibling (relation/first_read/seam, evidence-grounded or UNVERIFIED) and merges the YAML entries into docs/PROJECT-RELATED-CONTEXT.md - the on-demand orientation tier. The related-project-analyzer fan-out AND the generated .claude/rules awareness rule are Claude-only (INLINE characterization in Cursor; keep the awareness entries in AGENTS.md by hand - the doc is still worth writing). Re-run upserts per passed sibling. Manual, /-only."],
-    ["project-build-from-scratch","Greenfield / scaffolding","Build a new application or major module from scratch: design in-session (2-3 reasoned architecture options from the spec, grounded in the house architecture skills), the user picks (hard gate), then the stack's real new-project command + baseline wiring, then the build slice by slice (the domain-seat dispatch is Claude-only - INLINE slices in Cursor). Manual, /-only."],
-    ["project-task-flow","Build / orchestration","Entry-point router for multi-agent engineering work: classify a feature or bug and pick the smallest safe execution mode, and for cross-domain work freeze the shared contract before running each stack's domain trio and gating the assembled whole through the integration-reviewer. The cross-domain pipeline it routes (contract designer, per-domain trios, integration-reviewer) is Claude-only (INLINE mode in Cursor). Home of the shared subagent policies: execution modes, contract change, structured output, model and token routing."],
+    ["project-architecture-analyzer","Review / automation","Deliberate architecture capture: maps the project (module-by-module characterization, declared-vs-enforced reconciliation) and writes docs/architecture/ARCHITECTURE.md (lean core map + references/ deep-dives), docs/architecture/ASSESSMENT.md (10 strengths + 10 tiered weaknesses). In Cursor the characterization runs INLINE rather than fanning out to code-analyzer, and no always-on awareness rule is generated - the docs are the deliverable. Capture only - fixes are project-architecture-quality-loop. Manual, /-only."],
+    ["project-version-upgrade","Review / automation","Deliberate flow for any BREAKING version event - framework/runtime major, EOL, load-bearing package major: classify from the manifests, pull the breaking surface via context7, cross against located usage, sequence foundation-first with a rollback point per stage, approval gate (auto mode only on explicit ask), then staged execution with a verify gate per stage. In Cursor the staged execution runs INLINE rather than dispatching implementer/resolver seats. Manual, /-only."],
+    ["project-capabilities","Review / automation","Deliberate capabilities capture: inventories the installed skills / MCPs / agent seats and reports the real inventory for orientation. In Cursor no awareness rule is generated - the report is the deliverable. Re-run after install / update / a manifest trim. Manual, /-only."],
+    ["project-code-style-analyzer","Review / automation","Deliberate project code-style capture: characterizes each detected language (config-enforced rules + idioms a linter cannot encode, house-skill divergence flagged) and merges into docs/PROJECT-CODE-STYLE.md. In Cursor the characterization runs INLINE rather than fanning out to code-style-analyzer, and no style-injection hook is generated - the doc is the deliverable. Manual, /-only."],
+    ["project-related-context","Review / automation","Deliberate related-projects capture, args-driven (paths or git URLs, never a scan): characterizes each named sibling (relation/first_read/seam, evidence-grounded or UNVERIFIED) and merges the YAML entries into docs/PROJECT-RELATED-CONTEXT.md - the on-demand orientation tier. In Cursor the characterization runs INLINE rather than fanning out to related-project-analyzer, and no awareness rule is generated - keep the awareness entries in AGENTS.md by hand. Re-run upserts per passed sibling. Manual, /-only."],
+    ["project-build-from-scratch","Greenfield / scaffolding","Build a new application or major module from scratch: design in-session (2-3 reasoned architecture options from the spec, grounded in the house architecture skills), the user picks (hard gate), then the stack's real new-project command + baseline wiring, then the build slice by slice (in Cursor the slices run INLINE rather than dispatching domain seats). Manual, /-only."],
+    ["project-task-flow","Build / orchestration","Entry-point router for multi-agent engineering work: classify a feature or bug and pick the smallest safe execution mode, and for cross-domain work freeze the shared contract before running each stack's domain trio and gating the assembled whole through the integration-reviewer. In Cursor the cross-domain pipeline it routes (contract designer, per-domain trios, integration-reviewer) runs in INLINE mode. Home of the shared subagent policies: execution modes, contract change, structured output, model and token routing."],
     ["project-verify-plan","Build / orchestration","Audit an implementation plan or design BEFORE writing code: a risk-coverage review that checks the plan names the non-obvious traps its stack will hit (routing to the stack skill - dotnet-web-backend, angular-conventions, dotnet-wpf - for the trap list), matches the requirement's scope, covers the edge and safety cases, and stays minimal. The cheapest place to catch a design error, since a flawed plan built perfectly is still wrong. Pairs with writing-plans (creates the plan) and precedes /code-review (reviews the built code)."],
     ["project-implementer","Build / orchestration","Single-chat build step - the implementer seat's execution protocol in your context: take a verified plan (project-solution-design -> project-verify-plan), execute it task by task honoring each card's contract (files owned, traps, anchors, acceptance criterion), gate every task green (resolving reds inline - never dispatches), flag scope beyond the plan instead of riding it along, then finish via /code-review + the done-gate - completing the in-session designer -> implementer -> verifier vertical."],
     ["project-solution-design","Build / orchestration","Work out how a feature fits the existing code before building, in a single chat - the in-context form of the solution-designer seat. Reads docs/architecture/ARCHITECTURE.md, judges where the change belongs (extend an existing seam, refactor first, or isolate a new boundary) tied to the forcing edge, loads the stack skill (dotnet-web-backend, angular-conventions, dotnet-wpf) for the real traps, and decomposes the work into an ordered, minimal plan. Feeds project-verify-plan (which audits the plan) and precedes the build under the stack skill. The single-chat twin of the dispatched designer agent, kept in your context so you check each step."],
     ["project-failure-signatures","Diagnostics","A lookup of the common local-runtime failure signatures - null-reference, DI / composition-root resolution, async deadlock / sync-over-async hang, race / shared mutable state, disposed-lifecycle, config / environment drift, boundary / off-by-one, database contention / exhaustion, HTTP error with a clean response - each mapped to where the cause actually lives, which is almost never the line that threw. The single-chat form of the diagnoser seat's failure catalogue; pairs with the systematic-debugging method (this names the signature, that runs the hypothesis-and-test loop)."],
     ["project-ci-failure-signatures","Diagnostics","Triage a red CI pipeline or PR check in the current chat - match the failure to a signature (compile/restore, green-locally-red-on-the-runner, quality gate, signing/release, workflow-config drift, infra flake), make the red-in-CI/green-locally call between a real code defect and an environment/pin/config/workflow failure that never touched the code, and route it. The single-chat form of the ci-failure-diagnoser seat and the CI sibling of project-failure-signatures; pull the failing log yourself via gh rather than dispatching evidence-gatherers."],
-    ["devops","Build / DevOps","Containers, CI/CD, and safe deploys for the .NET/Angular house: multi-stage, cache-ordered, digest-pinned, non-root Docker images; GitHub Actions CI/CD (lint/test/build graph, lockfile-hash cache keys, real service-container integration tests, masked secrets, SHA-pinned actions, least-privilege permissions, OIDC over stored creds); safe deploy (environments + approvals, expand-contract migrations gated before the roll, health-gated blue-green/rolling cutover with rollback). The per-domain devops agent trio it dispatches is Claude-only (INLINE mode in Cursor)."],
+    ["devops","Build / DevOps","Containers, CI/CD, and safe deploys for the .NET/Angular house: multi-stage, cache-ordered, digest-pinned, non-root Docker images; GitHub Actions CI/CD (lint/test/build graph, lockfile-hash cache keys, real service-container integration tests, masked secrets, SHA-pinned actions, least-privilege permissions, OIDC over stored creds); safe deploy (environments + approvals, expand-contract migrations gated before the roll, health-gated blue-green/rolling cutover with rollback). In Cursor the per-domain devops agent trio it routes runs in INLINE mode."],
     ["postgres","Database / Postgres","PostgreSQL engine delta over database-conventions: index-type selection (B-tree/GIN/GiST/BRIN), JSONB + full-text, SARGable rewrites, the planner (EXPLAIN ANALYZE, pg_stat_statements, autovacuum, work_mem), connection pooling modes. Original house skill."],
     ["sqlite","Database / SQLite","SQLite engine delta over database-conventions: WAL / single-writer concurrency + busy_timeout, PRAGMAs (foreign_keys, journal_mode, synchronous), type affinity vs STRICT tables, limited ALTER TABLE + table-rebuild, connection-per-thread, FTS5. Original house skill."],
     ["typescript","TypeScript / JavaScript","Framework-agnostic TS/JS baseline: strict flags, discriminated unions, utility types, ESM modules, async (no floating promises), typed errors + Result, readonly, plain-JS via JSDoc + checkJs, ESLint/Prettier/tsconfig."],
     ["markdown-style","Docs / Markdown","Markdown authoring + review: a syntax canon (valid, portable Markdown) plus an opinionated house style overlay, applied in a two-pass procedure - fix syntax bugs, then batch the style judgment calls. Form only, not prose (Vale) or spelling."],
+    ["docs-as-code","Docs / Diagrams + ADRs","Docs-as-code authoring: Mermaid sequenceDiagram (interaction flows) + erDiagram (schema sketches), architecture decision records (Nygard default, MADR 4 for option analysis, plus the operational discipline), and C4 context/container views - routing per doc type via references/, syntax canon, pitfalls, graduation points (DBML/dbdiagram, Structurizr DSL)."],
     ["ilspy-decompile","C# / .NET","Decompile a compiled .NET assembly with ilspycmd (via dnx) to read its real implementation - framework internals, NuGet source you do not ship, or behavior confirmation before a framework upgrade. For source you already have, use serena / the LSP."],
     ["dotnet-project-setup","Setup / .NET","Set up a new .NET solution's build spine: the src / tests / .config layout, .slnx solution files, Directory.Build.props (shared Nullable / ImplicitUsings / LangVersion / global usings), global.json SDK pinning, central package management (Directory.Packages.props), and pinning a dotnet tool in .config/dotnet-tools.json. Analyzers route to dotnet-code-quality, CI and packaging to devops."],
     ["dotnet-performance","Performance / .NET","Performance-aware .NET design decisions and where they matter: allocation and memory layout (struct vs class, readonly struct, seal by default, Span, ValueTask, frozen collections) and serialization-format choice (System.Text.Json source-gen, Protobuf, MessagePack). Measure first with the benchmarking / diagnostics skills."],
@@ -237,17 +237,17 @@ const personal = {
   ]
 };
 
-// ---- Repository skills (git-clone + copy, same as Claude MINUS the plugin-marketplace rows,
-//      which are not Cursor-installable skills - see the plugin-mapping table). ----
+// ---- Repository skills (git-clone + copy). Plugin-marketplace rows are excluded: they are not
+//      Cursor-installable skills - see the capability map. ----
 const repository = [
 ];
 
 // ---- MCP servers (native in Cursor via .cursor/mcp.json) ----
 const mcp = [
-  ["context7","Library docs",".cursor/mcp.json (remote https://mcp.context7.com/mcp; 'context7-local' arg for local npx)","https://github.com/upstash/context7","Fetch current library/framework/SDK docs. Same product as on Claude - an MCP server, so identical in Cursor. Remote by default - key via ${env:CONTEXT7_API_KEY} from your OS env. Add `use context7` to a prompt."],
+  ["context7","Library docs",".cursor/mcp.json (remote https://mcp.context7.com/mcp; 'context7-local' arg for local npx)","https://github.com/upstash/context7","Fetch current library/framework/SDK docs. Remote by default - key via ${env:CONTEXT7_API_KEY} from your OS env. Add `use context7` to a prompt."],
   ["serena","Code navigation + local memory",".cursor/mcp.json (uvx --from serena-agent, --context ide-assistant)","https://github.com/oraios/serena","Code-aware symbol navigation, find-references, call-hierarchy via LSP. Cursor uses the generic `ide-assistant` context. Per-project .serena/ (SERENA_HOME=.serena/home) - its .serena/memories/ is now the subagent hand-off bus (name-addressed write_memory / read_memory / list_memories notes)."],
   ["playwright","Browser automation",".cursor/mcp.json (npx @playwright/mcp@<pinned>)","https://github.com/microsoft/playwright-mcp","Browser navigate/click/type/screenshot via Playwright. ${...} tokens are resolved to concrete paths when .cursor/mcp.json is written (Cursor does no shell interpolation)."],
-  ["memory","Memory / recall",".cursor/mcp.json (mcp-memory-service, shared ~/.memory-mcp)","https://codeberg.org/doobidoo/mcp-memory-service","Cross-project semantic memory (shares ~/.memory-mcp with Claude Code, same DB) - active in the baseline for cross-project recall. The per-project subagent hand-off runs on serena, so comment this out in a standalone project."],
+  ["memory","Memory / recall",".cursor/mcp.json (mcp-memory-service, shared ~/.memory-mcp)","https://codeberg.org/doobidoo/mcp-memory-service","Cross-project semantic memory (one shared DB under ~/.memory-mcp) - active in the baseline for cross-project recall. The per-project subagent hand-off runs on serena, so comment this out in a standalone project."],
   ["angular-cli","Angular / workspace",".cursor/mcp.json (npx -y @angular/cli mcp)","https://angular.dev/ai/mcp","Official Angular CLI MCP (experimental): workspace-aware docs, migrations, generation. Angular workspaces only (comment out elsewhere)."],
   ["chrome-devtools","Browser / extension debug","Active, heavy .cursor/mcp.json (npx chrome-devtools-mcp@latest)","https://github.com/ChromeDevTools/chrome-devtools-mcp","Official Chrome DevTools MCP. Active by default (heavy - comment out where not needed) - drives a full Chrome; needed mainly for browser/extension projects."],
   ["appium-mcp","Mobile / native E2E","Active, heavy .cursor/mcp.json (npx -y appium-mcp@latest)","https://github.com/appium/appium-mcp","Official Appium MCP (Appium core team): drive iOS simulators + Android emulators/devices (40+ tools - sessions, element finding incl. vision, gestures, app lifecycle, permissions, screenshots, test gen). Embedded UiAutomator2/XCUITest drivers. Active by default (heavy - comment out where not needed) - needs Xcode and/or Android SDK + Java; needed mainly for Capacitor/Ionic mobile projects."],
@@ -256,30 +256,30 @@ const mcp = [
 
 // ---- Hooks & rules (Cursor contract) ----
 const hooksRules = [
-  ["guard-protected-force-push.js","hook (beforeShellExecution)",".cursor/hooks/ + .cursor/hooks.json","Blocks a force-push to a protected branch (main/master/develop). Reads {command} on stdin, returns {permission: deny}. Cursor analog of the Claude guard-protected-force-push hook. Fetched from envoydev/cursor-stack/main/hooks."],
-  ["guard-catastrophic-rm.js","hook (beforeShellExecution)",".cursor/hooks/ + .cursor/hooks.json","Blocks a recursive rm of a catastrophic, unrecoverable target (/, ~, $HOME, or a bare *). Reads {command} on stdin, returns {permission: deny}. Cursor analog of the Claude guard-catastrophic-rm hook. Fetched from envoydev/cursor-stack/main/hooks."],
-  ["baseline-interaction.mdc","rule (alwaysApply)",".cursor/rules/","Always-on cross-cutting conventions: communication style, adversarial review of the user's proposals, formatting/privacy, and planning/execution thresholds. Twin of the Claude .claude/rules/baseline-interaction rule; loaded every turn like AGENTS.md, installer-refreshed."],
-  ["baseline-quality-gates.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: code-quality bar + the definition-of-done gate (build + tests run and output quoted before any done/fixed/passing claim). Twin of the Claude baseline-quality-gates rule."],
-  ["baseline-security.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: secret hygiene (never log/echo secrets, redact + rotate on a found secret) and Bugbot /review on crypto/secret/auth/payment/data-access diffs. Twin of the Claude baseline-security rule."],
-  ["baseline-git.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: Conventional Commits, no AI attribution, the commit-message shape (ticket/feature header, one sentence per change, Critical caveat last), and do-not-commit-or-push-until-asked. Twin of the Claude baseline-git rule."],
-  ["baseline-navigation.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: serena-first navigation and the hard rule never to Read a whole file just to locate a symbol (find_symbol / find_referencing_symbols or the LSP instead). Twin of the Claude baseline-navigation rule."],
-  ["csharp-conventions.mdc","rule (globs **/*.cs)",".cursor/rules/","C# house conventions (csharp), auto-attached when a .cs file is in context. The same soft convention-rule model Claude's .claude/rules now use - guidance injected on a matching file, never a block."],
-  ["typescript-conventions.mdc","rule (globs .ts/.tsx/.js/.jsx/.mjs/.cjs)",".cursor/rules/","TypeScript/JS baseline (typescript). The same soft model as Claude's .claude/rules. Auto-attaches by glob; composes with angular-conventions on Angular .ts files."],
-  ["sql-conventions.mdc","rule (globs **/*.sql)",".cursor/rules/","SQL house conventions (database-conventions). The same soft model as Claude's .claude/rules - hand-written SQL only."],
-  ["angular-conventions.mdc","rule (globs *.component.ts / *.service.ts / *.directive.ts / etc.)",".cursor/rules/","Angular conventions (angular-conventions). The same soft model as Claude's .claude/rules - keyed on Angular compound suffixes; bare .html isn't matched."],
-  ["wpf-conventions.mdc","rule (globs **/*.xaml)",".cursor/rules/","WPF/XAML house conventions (dotnet-wpf). The same soft model as Claude's .claude/rules - wire in for WPF repos only, not every C# repo has XAML."],
-  ["scss-conventions.mdc","rule (globs **/*.scss, **/*.css)",".cursor/rules/","Stylesheet house conventions (angular-styling). The same soft model as Claude's .claude/rules - for Angular workspaces that own their stylesheets."],
-  ["ponytail.mdc","rule (alwaysApply; vendored)",".cursor/rules/","Ponytail 'lazy senior dev' minimal-code rule (always applies). Vendored in this repo (cursor/rules/ponytail.mdc) - the Cursor form of the ponytail plugin the Claude stack installs."],
+  ["guard-protected-force-push.js","hook (beforeShellExecution)",".cursor/hooks/ + .cursor/hooks.json","Blocks a force-push to a protected branch (main/master/develop). Reads {command} on stdin, returns {permission: deny}. Fetched from envoydev/cursor-stack/main/hooks."],
+  ["guard-catastrophic-rm.js","hook (beforeShellExecution)",".cursor/hooks/ + .cursor/hooks.json","Blocks a recursive rm of a catastrophic, unrecoverable target (/, ~, $HOME, or a bare *). Reads {command} on stdin, returns {permission: deny}. Fetched from envoydev/cursor-stack/main/hooks."],
+  ["baseline-interaction.mdc","rule (alwaysApply)",".cursor/rules/","Always-on cross-cutting conventions: communication style, adversarial review of the user's proposals, formatting/privacy, and planning/execution thresholds. Loaded every turn like AGENTS.md, installer-refreshed."],
+  ["baseline-quality-gates.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: code-quality bar + the definition-of-done gate (build + tests run and output quoted before any done/fixed/passing claim)."],
+  ["baseline-security.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: secret hygiene (never log/echo secrets, redact + rotate on a found secret) and Bugbot /review on crypto/secret/auth/payment/data-access diffs."],
+  ["baseline-git.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: Conventional Commits, no AI attribution, the commit-message shape (ticket/feature header, one sentence per change, Critical caveat last), and do-not-commit-or-push-until-asked."],
+  ["baseline-navigation.mdc","rule (alwaysApply)",".cursor/rules/","Always-on: serena-first navigation and the hard rule never to Read a whole file just to locate a symbol (find_symbol / find_referencing_symbols or the LSP instead)."],
+  ["csharp-conventions.mdc","rule (globs **/*.cs)",".cursor/rules/","C# house conventions (csharp), auto-attached when a .cs file is in context. Soft guidance injected on a matching file, never a block."],
+  ["typescript-conventions.mdc","rule (globs .ts/.tsx/.js/.jsx/.mjs/.cjs)",".cursor/rules/","TypeScript/JS baseline (typescript). Auto-attaches by glob; composes with angular-conventions on Angular .ts files."],
+  ["sql-conventions.mdc","rule (globs **/*.sql)",".cursor/rules/","SQL house conventions (database-conventions) - hand-written SQL only."],
+  ["angular-conventions.mdc","rule (globs *.component.ts / *.service.ts / *.directive.ts / etc.)",".cursor/rules/","Angular conventions (angular-conventions) - keyed on Angular compound suffixes; bare .html isn't matched."],
+  ["wpf-conventions.mdc","rule (globs **/*.xaml)",".cursor/rules/","WPF/XAML house conventions (dotnet-wpf) - wire in for WPF repos only, not every C# repo has XAML."],
+  ["scss-conventions.mdc","rule (globs **/*.scss, **/*.css)",".cursor/rules/","Stylesheet house conventions (angular-styling) - for Angular workspaces that own their stylesheets."],
+  ["ponytail.mdc","rule (alwaysApply; vendored)",".cursor/rules/","Ponytail 'lazy senior dev' minimal-code rule (always applies). Vendored in this repo (rules/ponytail.mdc)."],
 ];
 
 // ---- Subagents (Cursor-native; fetched into .cursor/agents/) ----
-// [name, area, lands in, source url, description]. 33 agents - full twins of the Claude roster. Cursor
-// (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the twins carry the full
-// orchestration: project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers
-// dispatch evidence-gatherer, and the serena-memory handoff works. They differ from Claude only in the
-// genuine platform gaps: model:inherit (no reliable effort/model tiering), no per-tool `tools:` allowlist
-// (only `readonly`), superpowers optional via /add-plugin, and no hard-disable of auto-delegation. Both
-// stacks lean on the same soft convention rules (.cursor/rules here, .claude/rules on Claude).
+// [name, area, lands in, source url, description]. 33 agents. Cursor (2.5+) has a Task tool and
+// subagents that inherit the parent's MCP servers, so the roster carries the full orchestration:
+// project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch
+// evidence-gatherer, and the serena-memory handoff works. Cursor's platform limits shape the contract:
+// model:inherit (no reliable effort/model tiering), no per-tool `tools:` allowlist (only `readonly`),
+// superpowers optional via /add-plugin, and no hard-disable of auto-delegation. The agents lean on the
+// soft, glob-auto-attaching .cursor/rules for conventions.
 const agents = [
   ["dotnet-build-error-resolver", ".NET / build", "fetched into .cursor/agents/", "https://github.com/envoydev/cursor-stack", "Autonomous dotnet-build fix loop: categorize CS/NU/MSB errors, locate via serena, apply the minimal correct edit, rebuild until clean (5-cycle cap). Refuses to disable tests/warnings or stub code to pass. Implement phase, pairs after /brainstorm -> /plan. Cursor contract: readonly false, no tool allowlist - leans on the csharp-conventions rule."],
   ["dotnet-test-failure-resolver", ".NET / test", "fetched into .cursor/agents/", "https://github.com/envoydev/cursor-stack", "Autonomous dotnet-test red->green loop: fix the real defect (production vs test side), never skip/weaken/game a test or coverage threshold (5-cycle cap). Pairs after the build-error resolver. Cursor contract: prompt-only guardrails, no tool scoping."],
@@ -316,17 +316,17 @@ const agents = [
   ["related-project-analyzer", "Support / analyze", "fetched into .cursor/agents/", "https://github.com/envoydev/cursor-stack", "Read-only sibling-repo characterizer (name/relation/first_read/seam; URL siblings shallow-cloned) - the project-related-context skill fans it out and merges docs/PROJECT-RELATED-CONTEXT.md. readonly true."],
 ];
 
-// ---- Claude plugins -> Cursor equivalent (what maps, and how it's delivered) ----
-// [claude plugin, cursor equivalent, mechanism tag, available?, notes]
+// ---- Capability map (what each capability is, and how Cursor delivers it) ----
+// [capability, cursor delivery, mechanism tag, available?, notes]
 const equivalents = [
-  ["typescript-lsp","Built-in TypeScript service (tsserver)","native (built-in)",true,"Cursor ships VS Code's TypeScript service - TS/JS diagnostics work with no extension."],
-  ["csharp-lsp","Roslyn-based C# extension (DotRush, or muhammad-sammy/csharp, or JetBrains ReSharper)","Open VSX extension",true,"Microsoft's official C# Dev Kit is BLOCKED in Cursor (license, since Apr 2025). Use a Roslyn-based open/community alternative. If our csharp-lsp wraps Microsoft's CodeAnalysis LanguageServer, the same license may apply - check."],
-  ["superpowers","/add-plugin superpowers","Cursor plugin (manual UI)",true,"superpowers ships a real .cursor-plugin manifest (14 SKILL.md workflow skills + a Cursor hooks file). Install in Cursor chat with /add-plugin superpowers - a manual UI step, NOT auto-fetched by cursor-stack (unlike ponytail's single .mdc rule)."],
-  ["security-guidance (/security-review)","Bugbot (/review, /review-bugbot)","native",true,"Cursor's native Bugbot reviews for bugs + security + quality, in-editor (Cursor 3.7+) or on PRs."],
-  ["claude-md-management","AGENTS.md + .cursor/rules","native",true,"Cursor's native project-instruction form. The Cursor CLI also reads CLAUDE.md, so it is partially portable."],
-  ["context7","Context7 (same MCP server)","MCP (native)",true,"Identical product - an MCP server, already in the MCP section above."],
-  ["ponytail",".cursor/rules/ponytail.mdc","rule (vendored)",true,"'Lazy senior dev' minimal-code rule (alwaysApply: true). In Cursor it is NOT a plugin/MCP - cursor-stack lays down the vendored cursor/rules/ponytail.mdc into the project."],
-  ["claude-hud","none in GUI; closest: Cursor CLI /statusline","CLI-only / none",false,"No GUI HUD equivalent. The Cursor CLI /statusline (Apr 2026) is terminal-only and scriptable, surfacing session metadata (mode/branch/env) - not tokens/cost out of the box. Third-party billing extensions exist but are not a live session HUD."],
+  ["TypeScript / JS diagnostics","Built-in TypeScript service (tsserver)","native (built-in)",true,"Cursor ships VS Code's TypeScript service - TS/JS diagnostics work with no extension."],
+  ["C# diagnostics","Roslyn-based C# extension (DotRush, or muhammad-sammy/csharp, or JetBrains ReSharper)","Open VSX extension",true,"Microsoft's official C# Dev Kit is BLOCKED in Cursor (license, since Apr 2025). Use a Roslyn-based open/community alternative. Not installed by this script."],
+  ["Workflow methods","/add-plugin superpowers","Cursor plugin (manual UI)",true,"superpowers ships a real .cursor-plugin manifest (14 SKILL.md workflow skills + a Cursor hooks file). Install in Cursor chat with /add-plugin superpowers - a manual UI step, NOT auto-fetched by cursor-stack (unlike ponytail's single .mdc rule)."],
+  ["Security / code review","Bugbot (/review, /review-bugbot)","native",true,"Cursor's native Bugbot reviews for bugs + security + quality, in-editor (Cursor 3.7+) or on PRs."],
+  ["Project instructions","AGENTS.md + .cursor/rules","native",true,"Cursor's native project-instruction form - AGENTS.md for per-project structure, .cursor/rules for the conventions."],
+  ["Library docs","Context7 (MCP server)","MCP (native)",true,"An MCP server, already in the MCP section above."],
+  ["Minimal-code discipline",".cursor/rules/ponytail.mdc","rule (vendored)",true,"'Lazy senior dev' minimal-code rule (alwaysApply: true). In Cursor it is NOT a plugin/MCP - cursor-stack lays down the vendored rules/ponytail.mdc into the project."],
+  ["Session HUD / statusline","none in GUI; closest: Cursor CLI /statusline","CLI-only / none",false,"No GUI HUD equivalent. The Cursor CLI /statusline (Apr 2026) is terminal-only and scriptable, surfacing session metadata (mode/branch/env) - not tokens/cost out of the box. Third-party billing extensions exist but are not a live session HUD."],
 ];
 
 function matchRow(arr, q) { return q ? arr.filter(r => r.join(" ").toLowerCase().includes(q)) : arr; }
@@ -362,7 +362,7 @@ function renderRepository(filtered) {
   const orderedUrls = Object.keys(multi).sort((a, b) => (multi[b].length - multi[a].length) || a.localeCompare(b));
   const repoInstall = () => "manual";  // no per-repo mechanism - the git-clone step only fetches STACK_SKILLS_REPO
 
-  let html = `<h2>Repository skills</h2><div class="group-meta">No automated install path beyond the pinned personal repo (git-clone fetches only STACK_SKILLS_REPO). ${filtered.length} skills. Claude plugin-marketplace skills are excluded - see the plugin-mapping table.</div>`;
+  let html = `<h2>Repository skills</h2><div class="group-meta">No automated install path beyond the pinned personal repo (git-clone fetches only STACK_SKILLS_REPO). ${filtered.length} skills. Plugin-marketplace skills are excluded - see the capability map.</div>`;
   const tableFor = (rows) => {
     let t = `<table><thead><tr><th style="width:16%">Skill</th><th style="width:12%">Area</th><th style="width:24%">Install</th><th style="width:12%">Source</th><th>Description</th></tr></thead><tbody>`;
     for (const [name, area, u, desc] of rows.sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -398,7 +398,7 @@ function renderHooks(filtered) {
 }
 
 function renderAgents(filtered) {
-  let html = `<h2>Subagents</h2><div class="group-meta">Cursor-native specialist subagents, fetched into the project's <code>.cursor/agents/</code> tree - full twins of the Claude roster. Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so the twins carry the full orchestration: <code>project-task-flow</code> fans out designer/implementer/verifier, the diagnosers dispatch <code>evidence-gatherer</code>, and the serena-memory handoff works. They differ from Claude only in the genuine gaps (a <code>readonly</code> bool rather than a per-tool allowlist, <code>model: inherit</code> - no reliable effort/model tiering, superpowers optional via <code>/add-plugin</code>). ${filtered.length} agents.</div>`;
+  let html = `<h2>Subagents</h2><div class="group-meta">Cursor-native specialist subagents, fetched into the project's <code>.cursor/agents/</code> tree. Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so the roster carries the full orchestration: <code>project-task-flow</code> fans out designer/implementer/verifier, the diagnosers dispatch <code>evidence-gatherer</code>, and the serena-memory handoff works. Cursor's platform limits shape the contract (a <code>readonly</code> bool rather than a per-tool allowlist, <code>model: inherit</code> - no reliable effort/model tiering, superpowers optional via <code>/add-plugin</code>). ${filtered.length} agents.</div>`;
   const rows = filtered;
   // All agents share the same 'lands in' and source; lift whatever is uniform into
   // the header so it does not repeat down a column and squeeze the description.
@@ -424,8 +424,8 @@ function renderAgents(filtered) {
 }
 
 function renderEquiv(filtered) {
-  let html = `<h2>Claude plugins &rarr; Cursor equivalent</h2><div class="group-meta">Cursor has no <code>/plugin install</code>. How each Claude marketplace plugin maps to Cursor (native feature / Open-VSX extension / MCP / none). ${filtered.length} mappings.</div>`;
-  html += `<table><thead><tr><th style="width:18%">Claude plugin</th><th style="width:24%">Cursor equivalent</th><th style="width:16%">Mechanism</th><th style="width:8%">In Cursor</th><th>Notes</th></tr></thead><tbody>`;
+  let html = `<h2>Capability map</h2><div class="group-meta">Cursor has no <code>/plugin install</code>. How each capability is delivered instead (native feature / Open-VSX extension / MCP / none). ${filtered.length} capabilities.</div>`;
+  html += `<table><thead><tr><th style="width:18%">Capability</th><th style="width:24%">Cursor delivery</th><th style="width:16%">Mechanism</th><th style="width:8%">In Cursor</th><th>Notes</th></tr></thead><tbody>`;
   for (const [plugin, equiv, mech, avail, notes] of filtered) {
     const flag = avail ? `<span class="yes">&#10003; yes</span>` : `<span class="no">&#10007; no</span>`;
     html += `<tr><td><span class="name">${plugin}</span></td><td>${equiv}</td><td><span class="tag">${mech}</span></td><td>${flag}</td><td class="desc">${notes}</td></tr>`;

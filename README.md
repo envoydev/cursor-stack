@@ -2,25 +2,24 @@
 
 Two twin scripts that install (or update) the **complete Cursor stack into a project** - skills,
 MCP servers, hooks, convention rules, and subagents from the curated inventory in `cursor-stack.html`. The
-result is a **self-contained `.cursor/` tree** with zero dependency on `.claude` or the `claude`
-CLI. The agent is the script you run, so there is **no agent argument**. (Claude Code is the peer
-stack, in [`agents-stack`](https://github.com/envoydev/agents-stack) - also the repo the skills
-are cloned from.)
+result is a **self-contained `.cursor/` tree**: everything the agent needs lives under `.cursor/`,
+with no external agent CLI in the loop. The agent is the script you run, so there is **no agent
+argument**.
 
-| Script             | System        | Shell                                   |
-| ------------------ | ------------- | --------------------------------------- |
-| `cursor-stack.sh`  | macOS / Linux | `bash`                                  |
-| `cursor-stack.ps1` | Windows       | PowerShell 5.1 (Desktop) or 7+ (`pwsh`) |
+| Script                     | System        | Shell                                   |
+| -------------------------- | ------------- | --------------------------------------- |
+| `scripts/cursor-stack.sh`  | macOS / Linux | `bash`                                  |
+| `scripts/cursor-stack.ps1` | Windows       | PowerShell 5.1 (Desktop) or 7+ (`pwsh`) |
 
 The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result**.
 
-> `SKILLS` and `MCPS` are shared with the Claude stack in `agents-stack` - this repo's lint enforces
-> the `.sh`/`.ps1` twins agree, and a change to the shared skill/MCP baseline is a two-repo commit
-> (the skills themselves are cloned from `agents-stack` at install, so only the manifest lists are
-> duplicated). Cursor has **no `/plugin install`** system, so there is no plugins block here -
-> Claude's plugins map to Cursor natives / Open-VSX extensions / MCPs instead (see below). To trim
-> or extend, comment/uncomment manifest entries near the top of the script, then re-run; `npm run
-> lint` (repo root) verifies the twins agree.
+> The skills live in this repo under `skills/`, and the installer clones this repo to copy them in
+> (`STACK_SKILLS_REPO` overrides the source), so the stack is self-sourcing. The lint enforces that
+> the `.sh`/`.ps1` twins agree and that every manifest entry has a real `skills/` dir. Cursor has
+> **no `/plugin install`** system, so there is no plugins block - capabilities come from natives /
+> Open-VSX extensions / MCPs instead (see below). To trim or extend, comment/uncomment manifest
+> entries near the top of the script, then re-run; `npm run lint` (repo root) verifies the twins
+> agree.
 
 ---
 
@@ -28,11 +27,11 @@ The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result
 
 | Component | Lands in | Notes |
 | --------- | -------- | ----- |
-| **Skills** (64) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-task-flow` orchestration + routing (single-stack trios + cross-domain). git-clone + copy from `envoydev/agents-stack` (`cursor-stack.sh install skills-only`) |
+| **Skills** (65) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-task-flow` orchestration + routing (single-stack trios + cross-domain). Vendored in this repo's `skills/`, git-clone + copy at install (`scripts/cursor-stack.sh install skills-only`) |
 | **MCP servers** (8) | `.cursor/mcp.json` | `angular-cli`, `serena` (`--context ide-assistant`), `playwright`, `memory`, `context7`, plus `chrome-devtools` + `appium-mcp` (heavy - active; comment out where not needed) and `sentry` (error monitoring - hosted remote MCP, `SENTRY_ACCESS_TOKEN` as an OS env var expanded via `${env:VAR}`; comment out without Sentry). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project. Cursor supports MCP natively; shell `${…}` path tokens are resolved to concrete paths and bare `${VAR}` secrets rewritten to `${env:VAR}` (Cursor does no shell interpolation) |
 | **Hooks** (2) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` (`beforeShellExecution`): block force-push to main/master/develop and a recursive rm of /, ~, $HOME, or a bare *. Fetched from the repo's `hooks/` |
-| **Rules** (12) | `.cursor/rules/` | five always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` - `alwaysApply`, the cross-cutting conventions, twins of the Claude `.claude/rules/baseline-*` set) + the glob-auto-attaching convention rules `csharp` / `typescript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `scss-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `ponytail.mdc` (minimal-code, `alwaysApply`; the Cursor form of the Claude ponytail plugin) |
-| **Agents** (33) | `.cursor/agents/` | full twins of the Claude roster: the 4 resolvers, the 7-stack designer/implementer/verifier trios (ASP.NET, Angular, WPF, console, mobile, data, DevOps), the 4 cross-cutting seats (`issue-diagnoser`, `ci-failure-diagnoser`, `security-auditor`, `integration-reviewer`), and the 4 read-only support seats (`evidence-gatherer`, `code-analyzer`, `code-style-analyzer`, `related-project-analyzer`). Cursor (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the twins carry the full orchestration - `project-task-flow` fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch `evidence-gatherer`, and the serena-memory handoff works. They differ from Claude only in the genuine platform gaps: `model: inherit` (Cursor can't reliably pin the effort/model tiering), no per-tool `tools:` allowlist (only a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of auto-delegation. Fetched from the repo's `agents/` |
+| **Rules** (12) | `.cursor/rules/` | five always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` - `alwaysApply`, the cross-cutting conventions) + the glob-auto-attaching convention rules `csharp` / `typescript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `scss-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `ponytail.mdc` (minimal-code, `alwaysApply`) |
+| **Agents** (33) | `.cursor/agents/` | the 4 resolvers, the 7-stack designer/implementer/verifier trios (ASP.NET, Angular, WPF, console, mobile, data, DevOps), the 4 cross-cutting seats (`issue-diagnoser`, `ci-failure-diagnoser`, `security-auditor`, `integration-reviewer`), and the 4 read-only support seats (`evidence-gatherer`, `code-analyzer`, `code-style-analyzer`, `related-project-analyzer`). Cursor (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the roster carries the full orchestration - `project-task-flow` fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch `evidence-gatherer`, and the serena-memory handoff works. Cursor specifics: `model: inherit` (no reliable effort/model pin), no per-tool `tools:` allowlist (only a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of auto-delegation. Fetched from the repo's `agents/` |
 
 ### Install cadence - keep always vs install on occasion
 
@@ -40,16 +39,13 @@ Cost differs by artifact, so the keep-or-skip call does too:
 
 - **Skills** - permanent by default: keyword-gated and ~free when idle, so install all and let them self-gate. Whole-domain sets (the Ionic/Capacitor `mobile` group, `dotnet-wpf`) are optional only if you never touch that domain.
 - **MCPs** - real launch cost, so split: baseline `context7` / `serena` / `memory` / `playwright`; domain-gated `angular-cli` (Angular projects only); opt-in `chrome-devtools` and `appium-mcp` (heavy native deps - left commented unless needed). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project.
-- **Rules and agents** - permanent: the convention rules auto-attach by glob (free when no file matches) and `ponytail.mdc` is `alwaysApply`; the 33 agents run on demand - explicitly via `/name` or `@agent`, or the Task tool fans them out (`project-task-flow` drives the designer/implementer/verifier flow, since Cursor 2.5+ supports subagent dispatch). Cursor has no plugins - the Claude `*-lsp` pair maps to per-language Open-VSX extensions (install those matching the project's languages); design-taste guidance for distinctive UI now lives in the `frontend` skill (installed like any Cursor skill), not a plugin.
-
-To provision Claude Code too, run the `claude-stack.*` installers from
-[`agents-stack`](https://github.com/envoydev/agents-stack).
+- **Rules and agents** - permanent: the convention rules auto-attach by glob (free when no file matches) and `ponytail.mdc` is `alwaysApply`; the 33 agents run on demand - explicitly via `/name` or `@agent`, or the Task tool fans them out (`project-task-flow` drives the designer/implementer/verifier flow, since Cursor 2.5+ supports subagent dispatch). Cursor has no plugins - per-language diagnostics come from Open-VSX extensions (install those matching the project's languages); design-taste guidance for distinctive UI lives in the `frontend` skill (installed like any Cursor skill).
 
 ---
 
 ## Plugins - there is no `/plugin install` in Cursor
 
-Cursor adds capabilities three ways, none a Claude-style plugin marketplace:
+Cursor adds capabilities three ways, none of them a plugin marketplace:
 
 - **MCP servers** (native) - the five above, plus anything else in `.cursor/mcp.json`.
 - **Native features** - Skills, Commands, Rules, Subagents (`.cursor/agents/` - the 33 agents
@@ -59,15 +55,13 @@ Cursor adds capabilities three ways, none a Claude-style plugin marketplace:
   (DotRush / `muhammad-sammy.csharp` / ReSharper) since Microsoft's C# Dev Kit is blocked in Cursor.
   TypeScript diagnostics are built in. *(These are not installed by this script.)*
 
-**Recommended manual add - `superpowers`.** The Claude stack installs the `superpowers` workflow
-plugin; it ships a Cursor plugin too (a `.cursor-plugin` manifest with 14 workflow skills +
-Cursor hooks). Get it with a one-time **`/add-plugin superpowers`** in Cursor chat - `cursor-stack`
-can't script that UI step, so it's not auto-installed here.
+**Recommended manual add - `superpowers`.** It ships a Cursor plugin (a `.cursor-plugin` manifest
+with 14 workflow skills + Cursor hooks). Get it with a one-time **`/add-plugin superpowers`** in
+Cursor chat - `cursor-stack` can't script that UI step, so it's not auto-installed here.
 
-`cursor-stack.html` has the full **"Claude plugins → Cursor equivalent"** map. The Claude
-marketplace plugins themselves can't run in Cursor - only the MCP servers bundled inside them port
-(e.g. `context7`). There is **no Cursor GUI equivalent of a statusline HUD** (`claude-hud`); the
-closest is the Cursor **CLI** `/statusline` (terminal-only, scriptable) - not installed here.
+`cursor-stack.html` has the full capability inventory. Note there is **no Cursor GUI equivalent of
+a statusline HUD**; the closest is the Cursor **CLI** `/statusline` (terminal-only, scriptable) -
+not installed here.
 
 ---
 
@@ -103,8 +97,8 @@ The script runs a **prerequisites check first and warns (never fails)** - instal
 | **curl** / `Invoke-WebRequest` | fetching the hook + rule files | for hooks/rules | preinstalled | preinstalled |
 | **brew** / **winget** | `github-cli` extra only | optional | Homebrew | winget |
 
-The **`claude` CLI is never used**. C# LSP (`csharp-ls`) is only relevant if you add
-the corresponding Open-VSX extension yourself - this script does not install extensions.
+C# LSP (`csharp-ls`) is only relevant if you add the corresponding Open-VSX extension yourself -
+this script does not install extensions.
 
 ---
 
@@ -118,15 +112,15 @@ the corresponding Open-VSX extension yourself - this script does not install ext
 | `global` | `~/.cursor/` | `-g` |
 
 ```bash
-SCOPE=global bash cursor-stack.sh install            # macOS/Linux
-$env:SCOPE = 'global'; pwsh cursor-stack.ps1 install # Windows
+SCOPE=global bash $STACK/scripts/cursor-stack.sh install            # macOS/Linux
+$env:SCOPE = 'global'; pwsh $Stack\scripts\cursor-stack.ps1 install # Windows
 ```
 
 ### `CONTEXT7_API_KEY` - the one secret (optional)
 
 The `context7` MCP reads it from the environment at launch. Leave it unset in your install shell so
 the registration stays keyless, and set it as a persistent OS/user env var (or in your shell
-profile). `CLAUDE_CONFIG_DIR` is **not** used - Cursor resolves everything under `~/.cursor`.
+profile). Cursor resolves everything under `~/.cursor`.
 
 ---
 
@@ -134,23 +128,30 @@ profile). `CLAUDE_CONFIG_DIR` is **not** used - Cursor resolves everything under
 
 The **action** (`install` | `update`) is **required**; every other argument is optional with a default.
 
+The script runs from wherever your clone of this repo lives - it finds the target project from the
+working directory (`git rev-parse --show-toplevel`), not from its own location.
+
 ```bash
 cd /path/to/your/project        # run inside the target project
-bash cursor-stack.sh install
-bash cursor-stack.sh update
+STACK=~/path/to/cursor-stack    # your clone of this repo
+
+bash $STACK/scripts/cursor-stack.sh install
+bash $STACK/scripts/cursor-stack.sh update
 
 # Optional extras (args 2+, any order): a space (separate memory DB), install gh, context7 transport
-bash cursor-stack.sh install work            # space 'work' -> memory_work.db
-bash cursor-stack.sh install github-cli
-bash cursor-stack.sh install context7-local  # local npx context7 (default: remote hosted server)
+bash $STACK/scripts/cursor-stack.sh install work            # space 'work' -> memory_work.db
+bash $STACK/scripts/cursor-stack.sh install github-cli
+bash $STACK/scripts/cursor-stack.sh install context7-local  # local npx context7 (default: remote hosted server)
 ```
 
 ```powershell
 Set-Location C:\path\to\your\project
-pwsh cursor-stack.ps1 install
-pwsh cursor-stack.ps1 install work          # space 'work' -> memory_work.db (positional)
-pwsh cursor-stack.ps1 install -GitHubCli    # install gh (switch)
-pwsh cursor-stack.ps1 install -Context7 local  # local npx context7 (default: remote)
+$Stack = 'C:\path\to\cursor-stack'   # your clone of this repo
+
+pwsh $Stack\scripts\cursor-stack.ps1 install
+pwsh $Stack\scripts\cursor-stack.ps1 install work          # space 'work' -> memory_work.db (positional)
+pwsh $Stack\scripts\cursor-stack.ps1 install -GitHubCli    # install gh (switch)
+pwsh $Stack\scripts\cursor-stack.ps1 install -Context7 local  # local npx context7 (default: remote)
 ```
 
 > On Windows PowerShell 5.1 use `powershell` instead of `pwsh`. If scripts are blocked, run once:
@@ -163,9 +164,10 @@ For Cursor, **`install` and `update` are effectively the same**: a clean skill r
 
 ## Memory database
 
-Cursor and Claude Code share **`~/.memory-mcp`** so both see the same DB: default `memory.db`, or
-`memory_<space>.db` with a **space** (e.g. `work`). The path is resolved at install time and baked into
-`.cursor/mcp.json`.
+The `memory` MCP keeps its DB under **`~/.memory-mcp`**: default `memory.db`, or
+`memory_<space>.db` with a **space** (e.g. `work`). The root is outside the project on purpose, so
+recall carries across every project you install into. The path is resolved at install time and
+baked into `.cursor/mcp.json`.
 
 ---
 
@@ -178,4 +180,4 @@ Cursor and Claude Code share **`~/.memory-mcp`** so both see the same DB: defaul
 | `.cursor/mcp.json` or `hooks.json` not written | Python 3 missing (bash path) - on Windows the Store stub doesn't count. |
 | Hook / rule not installed | Fetched from GitHub (`…/cursor-stack/main/hooks` and `…/main/rules`); needs `curl`/`Invoke-WebRequest` and the files pushed upstream. Fail-soft keeps any existing copy. |
 | "not in a git repo - skipping…" | Project scope needs a git repo. Run `git init`, or use `SCOPE=global`. |
-| C# diagnostics absent | Cursor doesn't get the Claude LSP plugins - install a Roslyn C# extension from Open VSX (see the plugins section). |
+| C# diagnostics absent | Cursor ships no C# language server - install a Roslyn C# extension from Open VSX (see the plugins section). |

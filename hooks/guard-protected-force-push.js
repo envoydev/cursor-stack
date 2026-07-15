@@ -3,9 +3,7 @@
 // branch (main / master / develop). Reads { command, cwd? } on stdin, returns
 // { permission }. Speaks Cursor's hooks.json v1 contract (beforeShellExecution).
 //
-// Shares its decision logic with the Claude guard (claude/hooks/guard-protected-force-push.js)
-// so BOTH cover the same surface (the model in CLAUDE.md calls these the same guard
-// re-expressed). The command is split on ;|& into segments (like the rm guard) and
+// The command is split on ;|& into segments (like the rm guard) and
 // `git push` must be a segment's own COMMAND, not a substring of another program's
 // argument, so `echo "git push --force"` no longer false-positives. It blocks a `git
 // push` that would irreversibly rewrite or remove a protected branch:

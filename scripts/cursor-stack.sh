@@ -246,11 +246,19 @@ SKILLS=(
 #   - offline at provision -> resolution yields empty -> the entry falls back to unpinned.
 _npm_latest()  { command -v npm >/dev/null 2>&1 && npm view "$1" version 2>/dev/null | tr -d '[:space:]'; }
 _pypi_latest() { curl -fsSL "https://pypi.org/pypi/$1/json" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['info']['version'])" 2>/dev/null; }
-log "resolving latest MCP runtime versions (install/update network step)"
-MCP_CONTEXT7_VER="$(_npm_latest @upstash/context7-mcp)"
-MCP_PLAYWRIGHT_VER="$(_npm_latest @playwright/mcp)"
-MCP_SERENA_VER="$(_pypi_latest serena-agent)"
-MCP_MEMORY_VER="$(_pypi_latest mcp-memory-service)"
+# skills-only exits before mcp.json is ever written, so these four lookups would be paid for
+# pins nothing reads - and a flag whose whole point is an isolated, dependency-free skill install
+# has no business hitting the network first. Skipping leaves the pins empty, which is the same
+# already-supported unpinned state as being offline.
+if [ "$SKILLS_ONLY" = true ]; then
+  MCP_CONTEXT7_VER=""; MCP_PLAYWRIGHT_VER=""; MCP_SERENA_VER=""; MCP_MEMORY_VER=""
+else
+  log "resolving latest MCP runtime versions (install/update network step)"
+  MCP_CONTEXT7_VER="$(_npm_latest @upstash/context7-mcp)"
+  MCP_PLAYWRIGHT_VER="$(_npm_latest @playwright/mcp)"
+  MCP_SERENA_VER="$(_pypi_latest serena-agent)"
+  MCP_MEMORY_VER="$(_pypi_latest mcp-memory-service)"
+fi
 # Version-pin suffix: "@1.2.3" when resolved, "" (unpinned fallback) when offline.
 CTX7_PIN="${MCP_CONTEXT7_VER:+@$MCP_CONTEXT7_VER}"
 PW_PIN="${MCP_PLAYWRIGHT_VER:+@$MCP_PLAYWRIGHT_VER}"

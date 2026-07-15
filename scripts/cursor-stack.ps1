@@ -269,11 +269,20 @@ $Skills = @(
 # isolated env omits it -> "No module named 'numpy'"). Offline at provision -> empty -> unpinned.
 function Get-NpmLatest([string]$Pkg)  { try { ((npm view $Pkg version 2>$null) | Select-Object -First 1).Trim() } catch { '' } }
 function Get-PypiLatest([string]$Pkg) { try { (Invoke-RestMethod "https://pypi.org/pypi/$Pkg/json" -TimeoutSec 15).info.version } catch { '' } }
-Log 'resolving latest MCP runtime versions (install/update network step)'
-$McpContext7Ver   = Get-NpmLatest  '@upstash/context7-mcp'
-$McpPlaywrightVer = Get-NpmLatest  '@playwright/mcp'
-$McpSerenaVer     = Get-PypiLatest 'serena-agent'
-$McpMemoryVer     = Get-PypiLatest 'mcp-memory-service'
+# -SkillsOnly exits before mcp.json is ever written, so these four lookups would be paid for pins
+# nothing reads - and a flag whose whole point is an isolated, dependency-free skill install has no
+# business hitting the network first. Skipping leaves the pins empty, which is the same
+# already-supported unpinned state as being offline.
+if ($SkillsOnly) {
+  $McpContext7Ver = ''; $McpPlaywrightVer = ''; $McpSerenaVer = ''; $McpMemoryVer = ''
+}
+else {
+  Log 'resolving latest MCP runtime versions (install/update network step)'
+  $McpContext7Ver   = Get-NpmLatest  '@upstash/context7-mcp'
+  $McpPlaywrightVer = Get-NpmLatest  '@playwright/mcp'
+  $McpSerenaVer     = Get-PypiLatest 'serena-agent'
+  $McpMemoryVer     = Get-PypiLatest 'mcp-memory-service'
+}
 # Version-pin suffix: '@1.2.3' when resolved, '' (unpinned fallback) when offline.
 $Ctx7Pin   = if ($McpContext7Ver)   { '@' + $McpContext7Ver }   else { '' }
 $PwPin     = if ($McpPlaywrightVer) { '@' + $McpPlaywrightVer } else { '' }

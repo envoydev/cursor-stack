@@ -2,6 +2,7 @@
   "name": "cursor-stack",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Personal Cursor agent stack - installers, skills, subagents, rules, and hooks; self-sourcing, the installer clones this repo to copy the skills in.",
   "scripts": {
     "lint": "node scripts/lint-stack.js",

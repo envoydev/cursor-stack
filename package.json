@@ -1,0 +1,10 @@
+{
+  "name": "cursor-stack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal Cursor agent stack - installers, subagents, rules, and hooks; skills and the MCP baseline are shared with the Claude Code stack (agents-stack) and cloned from it at install.",
+  "scripts": {
+    "lint": "node scripts/lint-stack.js",
+    "test": "npm run lint"
+  }
+}

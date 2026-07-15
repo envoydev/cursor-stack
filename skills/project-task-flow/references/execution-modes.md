@@ -1,6 +1,6 @@
 # Execution Modes and Routing
 
-The full team is not the default. Classify size, risk, domains, and contract impact, then run the smallest safe mode. Modes are a routing policy, not separate agents - never create an angular-small-task-agent or an aspnet-implementer-high; keep one seat per role and let this policy pick the mode and `references/model-routing.md` pick the effort.
+The full team is not the default. Classify size, risk, domains, and contract impact, then run the smallest safe mode. Modes are a routing policy, not separate agents - never create an angular-small-task-agent or an aspnet-implementer-high; keep one seat per role and let this policy pick the mode. Cursor has no per-seat effort pin to vary, so the mode is the whole lever.
 
 ## DELEGATED vs INLINE - dispatch capability
 Before the size/risk modes below, each orchestration skill (`project-task-flow`, `project-build-from-scratch`, `project-architecture-quality-loop`, `project-quality-loop`) picks one dispatch mode at the start and holds it for the run. This is the shared policy those skills cite rather than restate:
@@ -45,13 +45,13 @@ novel or risky seam (new public/versioned API,
 
 The line between them is **discovery**: when the edit site is already known - a named file, a 1-2 line change the request or a diagnosis has already localized - `single_chat` does it in the main session at zero seat cost. Reserve `implementer_only` for when the seat must first *find* where to edit, or the change touches several files in the domain. Spinning a full seat for a known one-liner is the trivial-blast-radius overuse the modes exist to avoid. (The issue-flow sibling of this rung is `direct_fix` in `references/issue-investigation.md` - a diagnoser-localized trivial fix the main session applies without a separate implementer + verifier.)
 
-De-escalation runs the same way, a step DOWN the ladder. A pure presentational leaf - a component with no interaction, reactive subscriptions, routing, API, or shared-state surface (a property the designer's verdict already carries) - drops from `domain_trio` to `implementer_only` plus a main-session check, rather than paying an opus designer and an xhigh verifier for a labelled span. The lever is the lighter MODE, not a lighter verify effort: per the model/effort asymmetry `references/model-routing.md` owns, a trivial blast radius is made cheaper by choosing fewer / lighter seats, never by dialing a dispatched seat's effort down.
+De-escalation runs the same way, a step DOWN the ladder. A pure presentational leaf - a component with no interaction, reactive subscriptions, routing, API, or shared-state surface (a property the designer's verdict already carries) - drops from `domain_trio` to `implementer_only` plus a main-session check, rather than paying an opus designer and a thorough verifier for a labelled span. The lever is the lighter MODE: a trivial blast radius is made cheaper by convening fewer seats - there is no per-seat effort dial in Cursor to turn down instead.
 
 ## Route by risk, not size - what the verifier is worth
 
 The independent verifier (`domain_trio`+) is the flow's main cost premium: a fresh seat that re-runs the gates and catches a defect the implementer missed - but at roughly double the tokens of one self-verifying context. So it is **opt-in on risk, not the default**. Convene it only when the work trips an explicit **risk trigger**: auth, a migration or other data-loss exposure, concurrency, security-sensitive behavior, a shared contract seam, or a large refactor. Ordinary single-domain features - even medium ones that carry a boundary, overflow, or reactivity edge - do NOT convene it; they run in `implementer_only`, where the main session builds and self-verifies.
 
-So the trio's trigger is an explicit risk (the escalation-guardrail set below), not task size and not a merely non-obvious edge. **The deliberate trade:** below that bar a medium feature is self-verified by the one context that wrote it, so a subtle edge-case defect - an int32 overflow on an unbounded page, a reactivity slip - CAN ship, because no independent seat re-derives it. That is accepted on purpose: it roughly halves the token cost of ordinary single-domain work, and the risk triggers still force the mode UP the instant real, costly risk (auth, migration, data-loss, cross-domain, security, large refactor, unclear legacy) appears - so the independent gate is spent where a bug is expensive, not on every medium feature. A convened trio still runs a guarded Haiku implementer (`references/model-routing.md`). Fewer seats is the token lever that dominates all per-seat tuning; this rung is how you pull it.
+So the trio's trigger is an explicit risk (the escalation-guardrail set below), not task size and not a merely non-obvious edge. **The deliberate trade:** below that bar a medium feature is self-verified by the one context that wrote it, so a subtle edge-case defect - an int32 overflow on an unbounded page, a reactivity slip - CAN ship, because no independent seat re-derives it. That is accepted on purpose: it roughly halves the token cost of ordinary single-domain work, and the risk triggers still force the mode UP the instant real, costly risk (auth, migration, data-loss, cross-domain, security, large refactor, unclear legacy) appears - so the independent gate is spent where a bug is expensive, not on every medium feature. Fewer seats is the token lever that dominates all per-seat tuning; this rung is how you pull it.
 
 ## Escalation guardrails
 
@@ -72,23 +72,20 @@ implementer_only   -> domain_trio
 one-domain mode    -> cross_domain_light or full_cross_domain
 ```
 
-## Per-mode model, by example
+## Per-mode seats, by example
 
-The mode carries the effort; the seat is the same. Angular, three sizes:
+The mode carries the capability; the seat is the same. Angular, three sizes:
 
 ```yaml
 angular_small:   # one component/file, no API/auth/state change
   flow: single_chat or angular-implementer only
-  model: { implementer: sonnet-medium }
 angular_medium:  # new page, local state or API service, tests, contract unchanged
   flow: [angular-solution-designer, angular-implementer, angular-verifier]
-  model: { designer: opus-high, implementer: sonnet-medium, verifier: sonnet-high }
 angular_large:   # multiple areas, auth-sensitive UI, complex state, or a cross-domain API change
   flow: [angular-solution-designer, angular-implementer x N, angular-verifier]
-  model: { designer: opus-xhigh, implementers: sonnet-medium, verifier: sonnet-xhigh }
 ```
 
-These values illustrate the per-mode floor and rationale; they are not a per-dispatch dial. What the orchestrator can and cannot vary per dispatch - model yes (including the guarded-Haiku implementer down-dispatch), effort no - is the asymmetry `references/model-routing.md` owns. So the primary cost lever is the MODE / seat-count, not a re-dialed seat: `single_chat` and `implementer_only` skip the designer and the verifier entirely, which saves far more than running any dispatched seat a shade cheaper. A heavier need escalates to a higher mode or a heavier seat (the in-session scoping pass -> the deliberate project-architecture-analyzer capture, a domain verifier -> integration-reviewer), per the same policy. Capability wiring - context7 before a library API, a memory note read instead of a re-derivation - is the other lever the mode carries; see `references/capability-reuse.md`.
+Every seat runs on the session model: Cursor's agent frontmatter is `model: inherit` and carries no effort pin, so there is nothing to dial per seat or per dispatch. That makes the MODE / seat-count the whole cost lever, not a fallback for one: `single_chat` and `implementer_only` skip the designer and the verifier entirely, which is where the saving actually is. A heavier need escalates to a higher mode or a heavier seat (the in-session scoping pass -> the deliberate project-architecture-analyzer capture, a domain verifier -> integration-reviewer). The one model choice you do have is the session's own - start a run that leans on design judgment on a model you would trust with it. Capability wiring - context7 before a library API, a memory note read instead of a re-derivation - is the other lever the mode carries; see `references/capability-reuse.md`.
 
 ## Team Lead routing output
 

@@ -101,7 +101,6 @@ Route to these rather than restating them in each agent:
 
 - `references/execution-modes.md` - the mode ladder and escalation guardrails for both families.
 - `references/domain-trio-protocol.md` - the single-stack vertical: design -> parallel build -> bounded verify loop, status routing, memory hygiene. Read it whenever a single-stack mode is picked.
-- `references/model-routing.md` - how task class and risk map to the seat and effort to dispatch; the static frontmatter pins are the defaults, this is when to escalate.
 - `references/seam-catalog.md` - the stack-keyed traps the scoping pass walks: what turns a 'local' task cross-domain.
 - `references/contract-protocol.md` - the recorded interface, versioning, the change protocol and BLOCKED_CONTRACT_CHANGE.
 - `references/agent-output-protocol.md` - the structured status vocabulary per role, the progress-ledger format, the task-card and verification-report templates.
@@ -114,7 +113,7 @@ Route to these rather than restating them in each agent:
 
 - The main session is the only orchestrator. Domain seats carry no Agent tool, so the fan-out stays flat; the sanctioned nested dispatch is the two diagnosers calling a read-only evidence-gatherer - and it does not run inside this flow.
 - Scoping stays bounded: 2 locating passes in-session, then a code-analyzer digest - never a whole-module read in the orchestrator context.
-- Do not duplicate agents to vary task size or model effort. One durable seat per role; `references/execution-modes.md` picks the mode and `references/model-routing.md` picks the effort.
+- Do not duplicate agents to vary task size. One durable seat per role; `references/execution-modes.md` picks the mode. Cursor carries no per-seat model or effort pin and no per-dispatch override - every seat runs on the session model - so capability is bought by MODE (which seats, how many), never by re-dialing a seat.
 - Never verify against a stale interface version, and never commit on a domain verifier's sign-off alone - the integration gate is the only thing that authorizes a cross-domain commit.
 - Durable orientation lives in the committed docs - the architecture map (`docs/architecture/ARCHITECTURE.md` + `docs/architecture/references/`) and the code-style doc (`docs/PROJECT-CODE-STYLE.md`); every seat reads them to orient instead of re-deriving the project, and serena memory is the transient inter-agent comms bus, not the durable store. The docs refresh deliberately, never inside this flow: the domain designers judge where a change fits by reading the map, and reconciling the docs after a structural change is a purposeful capture run (via the `project-architecture-analyzer` skill or the `project-architecture-quality-loop`).
 - Keep this skill scoping, routing, and orchestration only. Stack knowledge lives in the domain agents and the skills they load; the single-stack execution protocol is `references/domain-trio-protocol.md`.

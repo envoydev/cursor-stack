@@ -20,13 +20,21 @@
 //      the manifest/array sizes (the prose numbers cannot silently lie);
 //   6. the vendored skills/ dirs equal the active manifest entries and
 //      each carries a SKILL.md (a manifest entry with no dir installs
-//      nothing; a dir with no entry is never copied);
-//   7. a backticked skill name in agents/*.md, rules/*.mdc, or
-//      AGENTS.template.md resolves to a known skill (any manifest entry,
+//      nothing; a dir with no entry is never copied), whose frontmatter
+//      loads, declares name == folder + a description, and carries only
+//      fields Cursor's schema defines - a block a YAML parser cannot load
+//      drops the skill from the registry SILENTLY, and a model:/effort:
+//      pin from the peer stack never fires;
+//   7. a backticked skill name in skills/**/*.md, agents/*.md, rules/*.mdc,
+//      or AGENTS.template.md resolves to a known skill (any manifest entry,
 //      active or commented), an MCP, an agent name, or the explicit
-//      non-skill allowlist - a renamed skill would otherwise rot silently
-//      (skill CONTENT is not linted here - only name resolution);
-//   8. no false 'Vendored from' label on a dotnet-* HTML line (house
+//      non-skill allowlist - a renamed skill would otherwise rot silently;
+//   8. no peer-stack framing on any surface that reaches a consuming project
+//      or a reader (skills/agents/rules/hooks/README/HTML/template/installers)
+//      - a fix ported from the sibling repo must not drag its framing back;
+//      the ${CLAUDE_PROJECT_DIR}/${CLAUDE_CONFIG_DIR} path tokens and the
+//      CLAUDE.md filename are the allowed exceptions;
+//   9. no false 'Vendored from' label on a dotnet-* HTML line (house
 //      dotnet-* skills are original work).
 // No dependencies. Run: node scripts/lint-stack.js
 //   -> exit 0 clean, 1 with findings.
@@ -56,7 +64,22 @@ const NON_SKILL_TOKENS = new Set([
     'baseline-project-architecture',     // generated per-project awareness rule, not a skill
     'baseline-project-related-context',  // generated per-project awareness rule, not a skill
     'baseline-project-capabilities',     // generated per-project awareness rule, not a skill
+    'project-code-style',                // generated per-project code-style rule, not a skill
     'general-purpose',                   // built-in agent type named in the template
+    // Third-party names the skills quote: packages, CLI tools, framework
+    // selectors, and one concept. None are skills; all are real things.
+    'axe-core',                          // a11y test package (angular-conventions)
+    'jest-axe',                          // a11y test package (angular-conventions)
+    'mat-button',                        // Angular Material selector
+    'mat-raised-button',                 // Angular Material selector
+    'mat-flat-button',                   // Angular Material selector
+    'mat-stroked-button',                // Angular Material selector
+    'app-order-list',                    // example component selector in a snippet
+    'order-list',                        // example component selector in a snippet
+    'uuid-ossp',                         // PostgreSQL extension (database-conventions)
+    'dotnet-dump',                       // .NET CLI diagnostic tool
+    'dotnet-gcdump',                     // .NET CLI diagnostic tool
+    'kebab-case',                        // a naming convention, named in prose
 ]);
 
 const findings = [];
@@ -213,6 +236,85 @@ function assertSameSet(what, manifests)
 function diskSet(dir, ext)
 {
     return new Set(fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith(ext)) : []);
+}
+
+// The five fields Cursor's SKILL.md schema defines. Anything else is dead weight
+// at best (a model:/effort: pin carried over from the peer stack never fires).
+const SKILL_FIELDS = new Set(['name', 'description', 'paths', 'disable-model-invocation', 'metadata']);
+
+// Read a SKILL.md frontmatter block WITHOUT a YAML dependency (this lint stays
+// dep-free so it runs on a bare checkout). Cursor loads the block with a real
+// YAML parser and a block that fails to load drops the skill from the registry
+// SILENTLY - no error, the skill simply stops existing. So this errs strict:
+// anything it cannot confidently read is a finding, never a pass. It models the
+// flat `key: value` shape the skills actually use; nesting is rejected rather
+// than guessed at.
+function parseFrontmatter(text)
+{
+    if (!text.startsWith('---\n'))
+    {
+        return { error: 'no frontmatter block' };
+    }
+
+    const end = text.indexOf('\n---\n', 3);
+    if (end === -1)
+    {
+        return { error: 'frontmatter block is never terminated' };
+    }
+
+    const fields = {};
+    const lines = text.slice(4, end + 1).split('\n');
+    for (let i = 0; i < lines.length; i++)
+    {
+        const line = lines[i];
+        if (line.trim() === '')
+        {
+            continue;
+        }
+
+        if (line.includes('\t'))
+        {
+            return { error: `line ${i + 1}: tab character (YAML forbids tabs)` };
+        }
+
+        if (/^\s/.test(line))
+        {
+            return { error: `line ${i + 1}: unexpected indentation - only flat 'key: value' is supported` };
+        }
+
+        const m = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s?(.*)$/);
+        if (!m)
+        {
+            return { error: `line ${i + 1}: not a 'key: value' pair -> ${line.slice(0, 48)}` };
+        }
+
+        const [, key, raw] = m;
+        const value = raw.trim();
+        const quoted = value.length > 1
+            && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")));
+
+        if (!quoted && (value.startsWith('"') || value.startsWith("'")))
+        {
+            return { error: `${key}: unbalanced quote` };
+        }
+
+        // The footgun that actually bites: an unquoted scalar containing ': '
+        // reads as a nested mapping, so the load fails and the skill vanishes.
+        if (!quoted && /:\s/.test(value))
+        {
+            return { error: `${key}: unquoted value contains ': ' - YAML will not load this block` };
+        }
+
+        // A double-quoted scalar with an unescaped inner '"' is equally fatal.
+        if (quoted && value.startsWith('"') && /[^\\]"/.test(value.slice(1, -1)))
+        {
+            return { error: `${key}: unescaped '"' inside a double-quoted value` };
+        }
+
+        fields[key] = quoted ? value.slice(1, -1) : value;
+    }
+
+    return { fields };
 }
 
 function main()
@@ -393,17 +495,52 @@ function main()
 
     for (const dir of skillDirs)
     {
-        if (!fs.existsSync(path.join(SKILLS_DIR, dir, 'SKILL.md')))
+        const skillMd = path.join(SKILLS_DIR, dir, 'SKILL.md');
+        if (!fs.existsSync(skillMd))
         {
             flag(`skills/${dir} has no SKILL.md - Cursor will not load it as a skill`);
+            continue;
+        }
+
+        // 8b. The frontmatter must load, or Cursor drops the skill silently.
+        const { error, fields } = parseFrontmatter(fs.readFileSync(skillMd, 'utf8'));
+        if (error)
+        {
+            flag(`skills/${dir}/SKILL.md frontmatter: ${error}`);
+            continue;
+        }
+
+        if (fields.name !== dir)
+        {
+            flag(`skills/${dir}/SKILL.md declares name '${fields.name ?? '(none)'}' - Cursor requires it to match the folder`);
+        }
+
+        if (!fields.description)
+        {
+            flag(`skills/${dir}/SKILL.md has no description - it is the routing key the agent matches on`);
+        }
+
+        for (const key of Object.keys(fields))
+        {
+            if (!SKILL_FIELDS.has(key))
+            {
+                flag(`skills/${dir}/SKILL.md carries '${key}:' - not in Cursor's SKILL.md schema (${[...SKILL_FIELDS].join(' / ')}), so it never fires`);
+            }
+        }
+
+        if ('disable-model-invocation' in fields && !['true', 'false'].includes(fields['disable-model-invocation']))
+        {
+            flag(`skills/${dir}/SKILL.md: disable-model-invocation must be true or false, got '${fields['disable-model-invocation']}'`);
         }
     }
 
-    // 9. Backticked hyphenated tokens in agents/*.md, rules/*.mdc, and
-    //    AGENTS.template.md resolve to a known skill (any manifest entry,
-    //    active or commented), an MCP, an agent name, or the allowlist. Same
-    //    case-collision rule: a capitalized token is
-    //    a finding only when it case-insensitively collides with a known name.
+    // 9. Backticked hyphenated tokens in skills/**/*.md, agents/*.md,
+    //    rules/*.mdc, and AGENTS.template.md resolve to a known skill (any
+    //    manifest entry, active or commented), an MCP, an agent name, or the
+    //    allowlist. The skills cross-reference each other constantly, so a
+    //    rename here rots silently without this. Same case-collision rule: a
+    //    capitalized token is a finding only when it case-insensitively
+    //    collides with a known name.
     const resolvable = new Set([...primary.active.keys(), ...primary.commented.keys()]);
     for (const s of [...mcpsPrimary.active, ...mcpsPrimary.commented]) resolvable.add(s);
     for (const a of agentManifest) resolvable.add(a);
@@ -412,6 +549,16 @@ function main()
     const scanFiles = [TEMPLATE];
     for (const f of diskSet(AGENTS_DIR, '.md')) scanFiles.push(path.join(AGENTS_DIR, f));
     for (const f of diskSet(RULES_DIR, '.mdc')) scanFiles.push(path.join(RULES_DIR, f));
+    const walkMarkdown = dir =>
+    {
+        for (const e of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [])
+        {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walkMarkdown(full);
+            else if (e.name.endsWith('.md')) scanFiles.push(full);
+        }
+    };
+    walkMarkdown(SKILLS_DIR);
     for (const file of scanFiles.filter(fs.existsSync))
     {
         const text = fs.readFileSync(file, 'utf8');
@@ -435,7 +582,51 @@ function main()
         }
     }
 
-    // 10. House dotnet-* skills are original work, not vendored copies - no
+    // 10. No peer-stack framing on any surface that reaches a consuming project
+    //     or a reader. The skills and agents share ancestry with the peer repo,
+    //     so a ported fix can drag its framing back in ('twin of X', 'X-only',
+    //     a .claude/ path); this is the guard that keeps the port honest. Two
+    //     exceptions are real and allowed: the ${CLAUDE_PROJECT_DIR} /
+    //     ${CLAUDE_CONFIG_DIR} MCPS path tokens (mechanism - resolved to
+    //     concrete paths before .cursor/mcp.json is written, never seen by a
+    //     user), and CLAUDE.md as a bare filename (a real file in sibling repos
+    //     the template tells an agent to read). This file and the repo's own
+    //     CLAUDE.md are not scanned: one is the enforcement, the other is the
+    //     documented exception.
+    const framingFiles = [README, STACK_HTML, TEMPLATE, CURSOR_SH, CURSOR_PS1];
+    for (const [dir, ext] of [[AGENTS_DIR, '.md'], [RULES_DIR, '.mdc'], [HOOKS_DIR, '.js']])
+    {
+        for (const f of diskSet(dir, ext)) framingFiles.push(path.join(dir, f));
+    }
+
+    const skillFiles = [];
+    const walkAll = dir =>
+    {
+        for (const e of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [])
+        {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walkAll(full);
+            else skillFiles.push(full);
+        }
+    };
+    walkAll(SKILLS_DIR);
+
+    const ALLOWED = /CLAUDE_PROJECT_DIR|CLAUDE_CONFIG_DIR|CLAUDE\.md/g;
+    for (const file of [...framingFiles, ...skillFiles].filter(fs.existsSync))
+    {
+        const lines = fs.readFileSync(file, 'utf8').split('\n');
+        for (let i = 0; i < lines.length; i++)
+        {
+            const stripped = lines[i].replace(ALLOWED, '');
+            const hit = stripped.match(/claude/i);
+            if (hit)
+            {
+                flag(`${path.relative(ROOT, file)}:${i + 1} names '${hit[0]}' - this repo's surfaces describe Cursor on its own terms (see CLAUDE.md); allowed only as the ${'${CLAUDE_PROJECT_DIR}'} / ${'${CLAUDE_CONFIG_DIR}'} tokens or the CLAUDE.md filename`);
+            }
+        }
+    }
+
+    // 11. House dotnet-* skills are original work, not vendored copies - no
     //    'Vendored from' label on a dotnet-* HTML line.
     const provenance = /\bvendored from\b/i;
     for (const line of html.split('\n'))

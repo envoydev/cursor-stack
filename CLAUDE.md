@@ -34,10 +34,11 @@ Invariants).
   six glob-auto-attaching convention rules + the always-on `ponytail.mdc`.
 - `hooks/` - `guard-protected-force-push.js` + `guard-catastrophic-rm.js` in Cursor's
   `beforeShellExecution` contract, wired via `.cursor/hooks.json`.
-- `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins): `.sh`/`.ps1` twin parity (SKILLS set
-  + order, MCPS, no PLUGINS), on-disk agents/rules/hooks == the manifest arrays, `skills/` dirs ==
-  the manifest entries (each with a `SKILL.md`), HTML sync, README headline counts, and the
-  backticked-token check over agents/rules/template.
+- `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins), dependency-free
+  by design: `.sh`/`.ps1` twin parity (SKILLS set + order, MCPS, no PLUGINS), on-disk agents/rules/hooks
+  == the manifest arrays, `skills/` dirs == the manifest entries (each with a `SKILL.md` whose
+  frontmatter loads and carries only Cursor's five fields), HTML sync, README headline counts, the
+  backticked-token check over skills/agents/rules/template, and the no-Claude-framing guard.
 
 ## The ownership model - everything is owned here
 
@@ -51,9 +52,10 @@ Invariants).
   baseline improvement is usually worth porting BOTH ways - but nothing here reads from there at
   runtime, and neither repo's lint can see the other. Divergence is expected and allowed; it is
   no longer a defect to reconcile.
-- **The public surface carries no Claude framing.** README, `cursor-stack.html`, the installers,
-  the skills, the agents and the rules describe Cursor on its own terms - never 'the twin of X',
-  never 'Claude-only'. `CLAUDE.md` (this file) and `.claude/` are the only exceptions, plus the
+- **The public surface carries no Claude framing** - and the lint proves it, so this is a gate,
+  not a good intention. README, `cursor-stack.html`, the installers, the skills, the agents and
+  the rules describe Cursor on its own terms - never 'the twin of X', never 'Claude-only'.
+  `CLAUDE.md` (this file) and `.claude/` are the only exceptions, plus the
   `${CLAUDE_PROJECT_DIR}` / `${CLAUDE_CONFIG_DIR}` MCPS path tokens, which are functional: they
   are resolved to concrete paths before `.cursor/mcp.json` is written and never reach a user.
 - **Things that must NOT grow back here:** plugins (Cursor has no `/plugin install`; equivalents

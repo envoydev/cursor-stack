@@ -4,7 +4,7 @@
 
   PowerShell port of cursor-stack.sh: every skill / MCP from cursor-stack.html (the complete
   toolset, not a curated subset), installed INTO a project. Built-in/system CLI skills are
-  excluded (they ship with the CLI). Claude Code lives in claude-stack.ps1.
+  excluded (they ship with the CLI). The Claude Code stack lives in the agents-stack repo.
 
   Usage (Windows PowerShell 5.1 or PowerShell 7+), run inside the target project (install == update for Cursor):
     pwsh cursor-stack.ps1 install   # provision Cursor
@@ -164,7 +164,7 @@ function Test-Prerequisites {
 
 $Scope = if ($env:SCOPE) { $env:SCOPE } else { 'project' }
 
-# This script provisions the Cursor agent. (Claude Code lives in claude-stack.ps1.)
+# This script provisions the Cursor agent. (The Claude Code stack lives in the agents-stack repo.)
 $Agent = 'cursor'
 
 # $ConfigDir is for path resolution only (e.g. the memory MCP db) - never exported to any CLI:
@@ -332,8 +332,8 @@ $Mcps = @(
 #       - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
 #     Conventions are NOT a hook in either stack: they ship as soft, path-scoped rules (Cursor:
 #     .cursor/rules/*.mdc, auto-attaches by glob - guidance, never a block) - see $CursorRules.
-$CursorHookBaseUrl = 'https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/hooks'
-$CursorRulesBaseUrl = 'https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/rules'
+$CursorHookBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/hooks'
+$CursorRulesBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/rules'
 $CursorHooks = @(
   'guard-protected-force-push.js::beforeShellExecution'
   'guard-catastrophic-rm.js::beforeShellExecution'
@@ -368,7 +368,7 @@ $CursorRules = @(
 # not reliably port - the twins inherit the session model), no per-tool 'tools:' allowlist (only 'readonly'),
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
-$CursorAgentBaseUrl = 'https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/agents'
+$CursorAgentBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/agents'
 $CursorAgents = @(
   # Build/test resolvers (readonly false - they edit to restore green)
   'dotnet-build-error-resolver.md'   # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped

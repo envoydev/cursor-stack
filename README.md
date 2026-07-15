@@ -4,7 +4,8 @@ Two twin scripts that install (or update) the **complete Cursor stack into a pro
 MCP servers, hooks, convention rules, and subagents from the curated inventory in `cursor-stack.html`. The
 result is a **self-contained `.cursor/` tree** with zero dependency on `.claude` or the `claude`
 CLI. The agent is the script you run, so there is **no agent argument**. (Claude Code is the peer
-in [`../claude/`](../claude/README.md).)
+stack, in [`agents-stack`](https://github.com/envoydev/agents-stack) - also the repo the skills
+are cloned from.)
 
 | Script             | System        | Shell                                   |
 | ------------------ | ------------- | --------------------------------------- |
@@ -13,11 +14,13 @@ in [`../claude/`](../claude/README.md).)
 
 The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result**.
 
-> `SKILLS` and `MCPS` are shared with the Claude scripts (the repo lint enforces parity across all
-> four). Cursor has **no `/plugin install`** system, so there is no plugins block here - Claude's
-> plugins map to Cursor natives / Open-VSX extensions / MCPs instead (see below). To trim or extend,
-> comment/uncomment manifest entries near the top of the script, then re-run; `npm run lint` (repo
-> root) verifies the manifests agree.
+> `SKILLS` and `MCPS` are shared with the Claude stack in `agents-stack` - this repo's lint enforces
+> the `.sh`/`.ps1` twins agree, and a change to the shared skill/MCP baseline is a two-repo commit
+> (the skills themselves are cloned from `agents-stack` at install, so only the manifest lists are
+> duplicated). Cursor has **no `/plugin install`** system, so there is no plugins block here -
+> Claude's plugins map to Cursor natives / Open-VSX extensions / MCPs instead (see below). To trim
+> or extend, comment/uncomment manifest entries near the top of the script, then re-run; `npm run
+> lint` (repo root) verifies the twins agree.
 
 ---
 
@@ -27,9 +30,9 @@ The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result
 | --------- | -------- | ----- |
 | **Skills** (64) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-task-flow` orchestration + routing (single-stack trios + cross-domain). git-clone + copy from `envoydev/agents-stack` (`cursor-stack.sh install skills-only`) |
 | **MCP servers** (8) | `.cursor/mcp.json` | `angular-cli`, `serena` (`--context ide-assistant`), `playwright`, `memory`, `context7`, plus `chrome-devtools` + `appium-mcp` (heavy - active; comment out where not needed) and `sentry` (error monitoring - hosted remote MCP, `SENTRY_ACCESS_TOKEN` as an OS env var expanded via `${env:VAR}`; comment out without Sentry). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project. Cursor supports MCP natively; shell `${…}` path tokens are resolved to concrete paths and bare `${VAR}` secrets rewritten to `${env:VAR}` (Cursor does no shell interpolation) |
-| **Hooks** (2) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` (`beforeShellExecution`): block force-push to main/master/develop and a recursive rm of /, ~, $HOME, or a bare *. Fetched from the repo's `cursor/hooks/` |
+| **Hooks** (2) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` (`beforeShellExecution`): block force-push to main/master/develop and a recursive rm of /, ~, $HOME, or a bare *. Fetched from the repo's `hooks/` |
 | **Rules** (12) | `.cursor/rules/` | five always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` - `alwaysApply`, the cross-cutting conventions, twins of the Claude `.claude/rules/baseline-*` set) + the glob-auto-attaching convention rules `csharp` / `typescript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `scss-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `ponytail.mdc` (minimal-code, `alwaysApply`; the Cursor form of the Claude ponytail plugin) |
-| **Agents** (33) | `.cursor/agents/` | full twins of the Claude roster: the 4 resolvers, the 7-stack designer/implementer/verifier trios (ASP.NET, Angular, WPF, console, mobile, data, DevOps), the 4 cross-cutting seats (`issue-diagnoser`, `ci-failure-diagnoser`, `security-auditor`, `integration-reviewer`), and the 4 read-only support seats (`evidence-gatherer`, `code-analyzer`, `code-style-analyzer`, `related-project-analyzer`). Cursor (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the twins carry the full orchestration - `project-task-flow` fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch `evidence-gatherer`, and the serena-memory handoff works. They differ from Claude only in the genuine platform gaps: `model: inherit` (Cursor can't reliably pin the effort/model tiering), no per-tool `tools:` allowlist (only a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of auto-delegation. Fetched from the repo's `cursor/agents/` |
+| **Agents** (33) | `.cursor/agents/` | full twins of the Claude roster: the 4 resolvers, the 7-stack designer/implementer/verifier trios (ASP.NET, Angular, WPF, console, mobile, data, DevOps), the 4 cross-cutting seats (`issue-diagnoser`, `ci-failure-diagnoser`, `security-auditor`, `integration-reviewer`), and the 4 read-only support seats (`evidence-gatherer`, `code-analyzer`, `code-style-analyzer`, `related-project-analyzer`). Cursor (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the twins carry the full orchestration - `project-task-flow` fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch `evidence-gatherer`, and the serena-memory handoff works. They differ from Claude only in the genuine platform gaps: `model: inherit` (Cursor can't reliably pin the effort/model tiering), no per-tool `tools:` allowlist (only a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of auto-delegation. Fetched from the repo's `agents/` |
 
 ### Install cadence - keep always vs install on occasion
 
@@ -39,7 +42,8 @@ Cost differs by artifact, so the keep-or-skip call does too:
 - **MCPs** - real launch cost, so split: baseline `context7` / `serena` / `memory` / `playwright`; domain-gated `angular-cli` (Angular projects only); opt-in `chrome-devtools` and `appium-mcp` (heavy native deps - left commented unless needed). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project.
 - **Rules and agents** - permanent: the convention rules auto-attach by glob (free when no file matches) and `ponytail.mdc` is `alwaysApply`; the 33 agents run on demand - explicitly via `/name` or `@agent`, or the Task tool fans them out (`project-task-flow` drives the designer/implementer/verifier flow, since Cursor 2.5+ supports subagent dispatch). Cursor has no plugins - the Claude `*-lsp` pair maps to per-language Open-VSX extensions (install those matching the project's languages); design-taste guidance for distinctive UI now lives in the `frontend` skill (installed like any Cursor skill), not a plugin.
 
-To provision Claude Code too, run [`../claude/claude-stack.*`](../claude/README.md).
+To provision Claude Code too, run the `claude-stack.*` installers from
+[`agents-stack`](https://github.com/envoydev/agents-stack).
 
 ---
 
@@ -172,6 +176,6 @@ Cursor and Claude Code share **`~/.memory-mcp`** so both see the same DB: defaul
 | MCP dies at launch with `-32000` | Node too old (use ≥ 22.12 LTS); or a stale npm cache against a freshly pinned version. |
 | `serena` / `memory` MCP missing | `uvx` not installed - install uv (see prereqs). `memory` also needs numpy, injected via `--with numpy`. |
 | `.cursor/mcp.json` or `hooks.json` not written | Python 3 missing (bash path) - on Windows the Store stub doesn't count. |
-| Hook / rule not installed | Fetched from GitHub (`…/main/cursor/hooks` and `…/cursor/rules`); needs `curl`/`Invoke-WebRequest` and the files pushed upstream. Fail-soft keeps any existing copy. |
+| Hook / rule not installed | Fetched from GitHub (`…/cursor-stack/main/hooks` and `…/main/rules`); needs `curl`/`Invoke-WebRequest` and the files pushed upstream. Fail-soft keeps any existing copy. |
 | "not in a git repo - skipping…" | Project scope needs a git repo. Run `git init`, or use `SCOPE=global`. |
 | C# diagnostics absent | Cursor doesn't get the Claude LSP plugins - install a Roslyn C# extension from Open VSX (see the plugins section). |

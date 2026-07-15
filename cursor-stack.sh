@@ -3,7 +3,7 @@
 # cursor-stack.sh [install|update] [space] [github-cli] - install/update the CURSOR stack
 # FOR A PROJECT: every skill / MCP from cursor-stack.html (the complete toolset, not a curated
 # subset), installed INTO a project. Built-in/system CLI skills are excluded (they ship with the
-# CLI). Bash twin of cursor-stack.ps1; Claude Code lives in claude-stack.sh.
+# CLI). Bash twin of cursor-stack.ps1; the Claude Code stack lives in the agents-stack repo.
 #
 # Usage - run this file directly inside the target project (install == update for Cursor):
 #   bash cursor-stack.sh install   # provision Cursor
@@ -40,7 +40,7 @@ case "$ACTION" in
   *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [skills-only]" >&2; exit 1 ;;
 esac
 
-# This script provisions the Cursor agent. (Claude Code lives in claude-stack.sh.)
+# This script provisions the Cursor agent. (The Claude Code stack lives in the agents-stack repo.)
 AGENT="cursor"
 
 # Optional extras (args 2+, any order, each with a default): a space name (any word -> a separate
@@ -292,8 +292,8 @@ MCPS=(
 #   - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
 # Convention enforcement is NOT a hook on either stack - its home is a soft, glob-auto-attaching rule
 # (.cursor/rules/*.mdc here, see CURSOR_RULES; .claude/rules on Claude), never a pre-edit block.
-CURSOR_HOOK_BASE_URL="https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/hooks"
-CURSOR_RULES_BASE_URL="https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/rules"
+CURSOR_HOOK_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/hooks"
+CURSOR_RULES_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/rules"
 CURSOR_HOOKS=(
   "guard-protected-force-push.js::beforeShellExecution"
   "guard-catastrophic-rm.js::beforeShellExecution"
@@ -328,7 +328,7 @@ CURSOR_RULES=(
 # not reliably port - the twins inherit the session model), no per-tool `tools:` allowlist (only `readonly`),
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
-CURSOR_AGENT_BASE_URL="https://raw.githubusercontent.com/envoydev/agents-stack/main/cursor/agents"
+CURSOR_AGENT_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/agents"
 CURSOR_AGENTS=(
   # Build/test resolvers (readonly false - they edit to restore green)
   "dotnet-build-error-resolver.md"   # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped

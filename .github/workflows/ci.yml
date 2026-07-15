@@ -1,0 +1,104 @@
+name: ci
+
+# Three gates, run on every push and PR so nothing drifts in silently.
+#
+#   lint              - the source-of-truth gate: .sh/.ps1 twin parity, disk == manifest,
+#                       skill frontmatter, reference resolution, the no-framing guard.
+#                       The lint is dependency-free by design, so there is no install step
+#                       and no lockfile question - node + `npm run lint` is the whole job.
+#   installer-linux   - the .sh actually RUNS.
+#   installer-windows - the .ps1 actually RUNS, on a native x86 PowerShell. This is the job
+#                       that matters most: the Windows twin cannot be executed on an Apple
+#                       Silicon dev box (no arm64 pwsh image; the amd64 one dies in .NET's
+#                       PAL under emulation), so before this workflow the twin was only ever
+#                       proven by reading it. A parse pass catches syntax on EVERY branch,
+#                       including the Windows-only paths a run never reaches; the run then
+#                       proves the install path end to end.
+#
+# Both installer jobs drive `install skills-only`, which exists for exactly this and exits
+# before the prerequisite check. STACK_SKILLS_REPO points at the checkout, so the git-clone
+# step is offline and deterministic - it tests THIS commit's skills, not whatever is on main.
+# Both twins resolve the target project with `git rev-parse --show-toplevel`, so the fixture
+# has to be a real git repo, not a bare directory.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm run lint
+
+  installer-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: syntax
+        run: bash -n scripts/cursor-stack.sh
+
+      - name: install skills-only into a throwaway project
+        env:
+          STACK_SKILLS_REPO: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          proj="$RUNNER_TEMP/proj"
+          mkdir -p "$proj" && cd "$proj"
+          git init -q . && git config user.email ci@example.com && git config user.name ci
+          bash "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" install skills-only
+
+          # The manifest is the contract: every active entry must land as a real skill dir.
+          expected=$(grep -c '"envoydev/cursor-stack|' "$GITHUB_WORKSPACE/scripts/cursor-stack.sh")
+          actual=$(find "$proj/.cursor/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          echo "manifest entries: $expected | installed skill dirs: $actual"
+          test "$actual" = "$expected"
+          test -f "$proj/.cursor/skills/create-ticket/SKILL.md"
+          echo "installer-linux: install path OK"
+
+  installer-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Parse covers every branch, including the winget / WindowsApps paths no run reaches.
+      - name: parse
+        shell: pwsh
+        run: |
+          $errors = $null; $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          "parse clean - $($tokens.Count) tokens"
+
+      - name: install -SkillsOnly into a throwaway project
+        shell: pwsh
+        env:
+          STACK_SKILLS_REPO: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = Join-Path $env:RUNNER_TEMP 'proj'
+          New-Item -ItemType Directory -Path $proj -Force | Out-Null
+          Set-Location $proj
+          git init -q .
+          git config user.email ci@example.com
+          git config user.name ci
+          & "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1" install -SkillsOnly
+          if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
+
+          $expected = (Select-String -Path "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1" `
+            -Pattern "'envoydev/cursor-stack\|" -AllMatches).Count
+          $actual = (Get-ChildItem -Path (Join-Path $proj '.cursor/skills') -Directory).Count
+          "manifest entries: $expected | installed skill dirs: $actual"
+          if ($actual -ne $expected) { throw "expected $expected skill dirs, got $actual" }
+          if (-not (Test-Path (Join-Path $proj '.cursor/skills/create-ticket/SKILL.md'))) {
+            throw 'create-ticket/SKILL.md missing'
+          }
+          'installer-windows: install path OK'

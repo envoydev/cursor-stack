@@ -77,7 +77,7 @@ const NON_SKILL_TOKENS = new Set([
     'disable-model-invocation',          // SKILL.md frontmatter field named in prose
     'baseline-project-architecture',     // generated per-project awareness rule, not a skill
     'baseline-project-related-context',  // generated per-project awareness rule, not a skill
-    'baseline-project-capabilities',     // generated per-project awareness rule, not a skill
+    'baseline-project-agent-capabilities', // generated per-project awareness rule, not a skill
     'project-code-style',                // generated per-project code-style rule, not a skill
     'dotnet-repair-agents',              // installed .mdc repair-router rule, not a skill
     'angular-repair-agents',             // installed .mdc repair-router rule, not a skill

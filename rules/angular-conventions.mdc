@@ -1,6 +1,6 @@
 ---
 description: Angular house conventions - apply when editing Angular component/service/directive/etc. files.
-globs: "**/*.component.ts,**/*.service.ts,**/*.directive.ts,**/*.pipe.ts,**/*.guard.ts,**/*.resolver.ts,**/*.interceptor.ts,**/*.component.html"
+globs: "**/*.component.ts,**/*.service.ts,**/*.directive.ts,**/*.pipe.ts,**/*.guard.ts,**/*.resolver.ts,**/*.interceptor.ts,**/*.component.html,**/src/app/**/*.ts,**/src/lib/**/*.ts"
 alwaysApply: false
 ---
 
@@ -14,5 +14,9 @@ If the `angular-conventions` skill is not loaded, hold the line on the highest-v
 standalone components with `inject()` over constructor injection, signals over manual
 subscriptions, and `OnPush` change detection. Target the Angular 17+ house floor, reaching for the newest idioms the workspace ships.
 
-This is guidance, auto-attached by glob (not a hard block). Bare `.html` stays ungated
-(Angular template vs static page is ambiguous).
+This is guidance, auto-attached by glob (not a hard block). The `src/app` / `src/lib` `.ts`
+globs catch Angular 20's suffix-less filenames (a `user.ts` component the type-suffix globs miss);
+they widen the surface to non-Angular `.ts` under those dirs too, but the guidance self-scopes
+('when editing Angular files') so a plain helper is unaffected. Bare `.html` stays ungated on
+purpose (Angular template vs static page is ambiguous - and unlike a `.ts`, a stray match is a
+real miss), so a v20 `user.html` template routes through `frontend` or a manual load, not here.

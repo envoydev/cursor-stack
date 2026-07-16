@@ -52,6 +52,7 @@ const AGENTS_DIR = path.join(ROOT, 'agents');
 const RULES_DIR = path.join(ROOT, 'rules');
 const HOOKS_DIR = path.join(ROOT, 'hooks');
 const SKILLS_DIR = path.join(ROOT, 'skills');
+const SCRIPTS_DIR = __dirname;   // the installer twins + standalone utilities live beside this lint
 const TEMPLATE = path.join(ROOT, 'templates', 'AGENTS.template.md');
 
 // The single files every check below assumes. They are NOT optional: a missing one
@@ -629,7 +630,17 @@ function main()
     //     the template tells an agent to read). This file and the repo's own
     //     CLAUDE.md are not scanned: one is the enforcement, the other is the
     //     documented exception.
-    const framingFiles = [README, STACK_HTML, TEMPLATE, CURSOR_SH, CURSOR_PS1];
+    const framingFiles = [README, STACK_HTML, TEMPLATE];
+    // Every shell script in scripts/ - discovered, not named, so a script added later is
+    // covered without anyone remembering to list it here. This deliberately picks up the two
+    // installer twins plus standalone utilities (fix-serena-ts-windows.ps1). lint-stack.js
+    // itself is .js and so excluded by construction: it IS the enforcement and quotes the
+    // very tokens it bans.
+    for (const ext of ['.sh', '.ps1'])
+    {
+        for (const f of diskSet(SCRIPTS_DIR, ext)) framingFiles.push(path.join(SCRIPTS_DIR, f));
+    }
+
     for (const [dir, ext] of [[AGENTS_DIR, '.md'], [RULES_DIR, '.mdc'], [HOOKS_DIR, '.js']])
     {
         for (const f of diskSet(dir, ext)) framingFiles.push(path.join(dir, f));

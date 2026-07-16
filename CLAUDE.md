@@ -6,7 +6,7 @@ The single source of truth for the **Cursor** half of a personal coding-agent se
 application. It was split out of the Claude stack (`claude-stack`, still the peer repo, renamed
 from `agents-stack`), and is now **fully standalone**: this repo owns the whole Cursor delivery -
 the installers, the 65 vendored skills, the 33 Cursor-contract subagents, the `.mdc` rules, the
-hooks, and the `AGENTS.template.md` base template. The installer clones THIS repo to copy
+hooks, and the `templates/AGENTS.template.md` base template. The installer clones THIS repo to copy
 `skills/` in, so nothing is fetched from the peer at install. Consuming projects pull from here -
 they do not own their copy; a change made only inside a consuming project is throwaway (see
 Invariants).
@@ -16,7 +16,7 @@ Invariants).
 - `scripts/cursor-stack.{sh,ps1}` - the installer twins (same args, same result); they locate the
   target project via `git rev-parse --show-toplevel`, so they run from anywhere.
   `cursor-stack.html` - the browser inventory.
-- `AGENTS.template.md` - the stack-neutral per-project skeleton each consuming project's
+- `templates/AGENTS.template.md` - the stack-neutral per-project skeleton each consuming project's
   `AGENTS.md` is filled in from (Cursor reads `AGENTS.md`).
 - `skills/` - the 65 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
   `SKILL.md`), copied into a project's `.cursor/skills/` by the installer's git-clone step. The

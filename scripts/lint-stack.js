@@ -52,7 +52,20 @@ const AGENTS_DIR = path.join(ROOT, 'agents');
 const RULES_DIR = path.join(ROOT, 'rules');
 const HOOKS_DIR = path.join(ROOT, 'hooks');
 const SKILLS_DIR = path.join(ROOT, 'skills');
-const TEMPLATE = path.join(ROOT, 'AGENTS.template.md');
+const TEMPLATE = path.join(ROOT, 'templates', 'AGENTS.template.md');
+
+// The single files every check below assumes. They are NOT optional: a missing one
+// used to be dropped by a `.filter(fs.existsSync)` further down, which silently
+// un-scanned it - when the template moved to templates/, the backtick scan AND the
+// no-framing guard stopped reading it and the lint still reported clean. Fail loudly
+// instead: a required file that moved is a bug, never a skip.
+const REQUIRED_FILES = [
+    [CURSOR_SH, 'installer (.sh)'],
+    [CURSOR_PS1, 'installer (.ps1)'],
+    [README, 'README'],
+    [STACK_HTML, 'HTML inventory'],
+    [TEMPLATE, 'base template'],
+];
 
 // Backticked kebab-case tokens that look like skill names but are not
 // (code identifiers, generated rule names, MCP servers). The master list -
@@ -319,6 +332,27 @@ function parseFrontmatter(text)
 
 function main()
 {
+    // 0. Every required file is where the lint expects it. This runs FIRST because a
+    //    missing one makes every check below either crash or - worse - quietly pass:
+    //    the scans at the bottom filter on fs.existsSync, so a file that MOVED just
+    //    stops being scanned. Exit immediately rather than report a clean run over a
+    //    surface nobody read.
+    for (const [file, label] of REQUIRED_FILES)
+    {
+        if (!fs.existsSync(file))
+        {
+            flag(`${label} not found at ${path.relative(ROOT, file)} - it moved or is missing; `
+                + `every check that reads it would silently skip it. Fix the path in lint-stack.js.`);
+        }
+    }
+
+    if (findings.length > 0)
+    {
+        for (const finding of findings) console.error(`LINT: ${finding}`);
+        console.error(`\n${findings.length} finding(s).`);
+        process.exit(1);
+    }
+
     // 1. SKILLS: the .sh/.ps1 twins agree on the active set...
     const skills = {
         'cursor-stack.sh':  parseManifest(CURSOR_SH, '"', 'SKILLS=('),

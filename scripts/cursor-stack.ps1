@@ -515,7 +515,9 @@ function Initialize-Source {
   if (-not $hasGit) { Log '  !! release archive unreachable and git not found - no source'; $script:SourceFailed = $true; return $false }
   $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
   New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-  & git clone --depth 1 $script:SourceRepoUrl $tmp *> $null
+  # Pinned to main: the release branch is what installs deliver, never whatever the repo's
+  # default branch happens to be (development lands on develop).
+  & git clone --depth 1 -b main $script:SourceRepoUrl $tmp *> $null
   if ($LASTEXITCODE -ne 0) {
     Log "  !! release archive and clone of $($script:SourceRepoUrl) both failed - every artifact step keeps its existing copy"
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue

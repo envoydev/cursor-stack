@@ -82,6 +82,14 @@ jobs:
           STACK_SOURCE_REPO: ${{ github.workspace }}
         run: |
           set -euo pipefail
+          # The fallback clone is pinned to -b main (the release branch), but actions/checkout
+          # fetches only the triggering ref - so refs/heads/main does not exist on a develop run
+          # and the clone would find no branch. Point a local main at THIS commit: the pin is
+          # exercised AND the fixture still tests the artifacts under test rather than whatever
+          # real main holds. (That the pin actually PREFERS main over the current branch is a
+          # different claim, proven by the pin-honored step below.)
+          git -C "$GITHUB_WORKSPACE" branch -f main HEAD
+
           proj="$RUNNER_TEMP/full"
           mkdir -p "$proj" && cd "$proj"
           git init -q . && git config user.email ci@example.com && git config user.name ci
@@ -103,6 +111,30 @@ jobs:
           # The stamp must name the commit actually installed - not a stale or invented one.
           grep -q "^source_commit=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)$" "$proj/.cursor/cursor-stack.stamp"
           echo "installer-linux: full tree + stamp OK"
+
+      # The claim -b main actually buys: a consumer never gets unreleased work. The step above
+      # points main at HEAD, so it proves the pin RUNS but not that it PREFERS main - this one
+      # uses a fixture where the two branches genuinely differ.
+      - name: fallback clone is pinned to main - develop work stays invisible
+        run: |
+          set -euo pipefail
+          fx="$RUNNER_TEMP/fx"
+          mkdir -p "$fx/skills" "$fx/agents" && cd "$fx"
+          git init -q -b main . && git config user.email ci@example.com && git config user.name ci
+          echo main > agents/marker.md && git add -A && git commit -qm main
+          main_sha=$(git rev-parse HEAD)
+          git checkout -qb develop && echo develop > agents/marker.md && git commit -qam develop
+          dev_sha=$(git rev-parse HEAD)
+          test "$main_sha" != "$dev_sha"   # the fixture is only meaningful if they differ
+
+          proj="$RUNNER_TEMP/pin"
+          mkdir -p "$proj" && cd "$proj"
+          git init -q . && git config user.email ci@example.com && git config user.name ci
+          # The fixture sits on develop; without the pin the clone would take develop's tip.
+          STACK_SOURCE_REPO="$fx" bash "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" install skills-only 2>&1 | tee run.log
+          grep -q "source: clone fallback @ main ${main_sha:0:12}" run.log
+          ! grep -q "${dev_sha:0:12}" run.log
+          echo "installer-linux: pin honored - took main ${main_sha:0:12}, not develop ${dev_sha:0:12}"
 
       # The route real consumers take. A local STACK_SOURCE_REPO can only test the fallback, so
       # build the same snapshot release.yml would publish, serve it, and install from it for real.
@@ -180,6 +212,11 @@ jobs:
           STACK_SOURCE_REPO: ${{ github.workspace }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # The fallback clone is pinned to -b main; actions/checkout fetches only the triggering
+          # ref, so point a local main at THIS commit - the pin is exercised and the fixture still
+          # tests the artifacts under test. See the linux job for the full note.
+          & git -C $env:GITHUB_WORKSPACE branch -f main HEAD
+
           $proj = Join-Path $env:RUNNER_TEMP 'full'
           New-Item -ItemType Directory -Path $proj -Force | Out-Null
           Set-Location $proj

@@ -445,7 +445,9 @@ ensure_source() {
   # Fallback: a shallow clone - a fork without releases, a blocked release CDN, or a local test path.
   command -v git >/dev/null 2>&1 || { log "  !! release archive unreachable and git not found - no source"; SOURCE_FAILED=true; return 1; }
   tmp="$(mktemp -d)"
-  if ! git clone --depth 1 "$SOURCE_REPO_URL" "$tmp" >/dev/null 2>&1; then
+  # Pinned to main: the release branch is what installs deliver, never whatever the repo's
+  # default branch happens to be (development lands on develop).
+  if ! git clone --depth 1 -b main "$SOURCE_REPO_URL" "$tmp" >/dev/null 2>&1; then
     log "  !! release archive and clone of $SOURCE_REPO_URL both failed - every artifact step keeps its existing copy"
     rm -rf "$tmp"; SOURCE_FAILED=true; return 1
   fi

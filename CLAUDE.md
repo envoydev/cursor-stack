@@ -54,7 +54,9 @@ Invariants).
   carrying a `RELEASE-SOURCE` file naming the commit). A run downloads it - one asset is one
   revision, and taking it needs no git - and falls back to a shallow clone only when no release is
   reachable: a fork without releases, a blocked CDN, a local path (which is how the tests and CI
-  drive it), or the brief window the release job's delete/recreate opens. The `.sh` takes the
+  drive it), or the brief window the release job's delete/recreate opens. That fallback clone is
+  pinned `-b main` - installs deliver the release branch regardless of what the repo's default
+  branch happens to be, so `develop` work stays invisible until it is released. The `.sh` takes the
   tar.gz, the `.ps1` takes the zip (`Expand-Archive` is native) - that is why both are published.
   Each run stamps `.cursor/cursor-stack.stamp` with the source commit (from `RELEASE-SOURCE` on the
   archive route, from `HEAD` on the clone route) - Cursor has no per-artifact `version:` field, so

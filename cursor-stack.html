@@ -270,6 +270,10 @@ const hooksRules = [
   ["wpf-conventions.mdc","rule (globs **/*.xaml)",".cursor/rules/","WPF/XAML house conventions (dotnet-wpf) - wire in for WPF repos only, not every C# repo has XAML."],
   ["scss-conventions.mdc","rule (globs **/*.scss, **/*.css)",".cursor/rules/","Stylesheet house conventions (angular-styling) - for Angular workspaces that own their stylesheets."],
   ["ponytail.mdc","rule (alwaysApply; vendored)",".cursor/rules/","Ponytail 'lazy senior dev' minimal-code rule (always applies). Vendored in this repo (rules/ponytail.mdc)."],
+  ["dotnet-repair-agents.mdc","rule (globs .cs/.csproj/.sln/.xaml/props)",".cursor/rules/","Repair routing: a broken .NET build goes to dotnet-build-error-resolver, a red suite to dotnet-test-failure-resolver once green - the seat absorbs the red loop's output and returns a diagnosis. A seat with no dispatch tool runs its own bounded loop instead."],
+  ["angular-repair-agents.mdc","rule (globs angular.json/.component.ts/.spec.ts/.scss)",".cursor/rules/","Repair routing: a broken Angular build (Ionic included - ionic build wraps ng build) goes to ng-build-error-resolver, a red spec suite to angular-test-resolver once green. A seat with no dispatch tool runs its own bounded loop instead."],
+  ["markdown-docs.mdc","rule (globs **/*.md)",".cursor/rules/","Trigger patch: a plain content edit to any .md misses markdown-style's keyword triggers, so this glob routes it (plus docs-as-code for ADR / Mermaid / C4 work)."],
+  ["devops-conventions.mdc","rule (globs Dockerfile/compose/workflows)",".cursor/rules/","DevOps house conventions (devops skill), auto-attached on a container build, a compose topology, or a GitHub Actions workflow - the delivery surface."],
 ];
 
 // ---- Subagents (Cursor-native; fetched into .cursor/agents/) ----

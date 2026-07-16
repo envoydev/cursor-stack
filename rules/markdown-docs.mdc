@@ -1,0 +1,18 @@
+---
+description: Trigger patch - a content edit to any .md misses the doc skills' keyword triggers, so this glob routes it.
+globs: "**/*.md"
+alwaysApply: false
+---
+
+Authoring or restructuring any `.md` (README, ADR, runbook) - load the `markdown-style` skill under
+`.cursor/skills/` first; skip the load when it is already in context. Its own keywords only catch an
+explicit lint ask, so a plain content edit misses it - which is exactly the blind spot this glob
+patches.
+
+ADR / Mermaid-diagram / C4 work also loads `docs-as-code` (same blind spot: its triggers are the
+doc-type keywords, not an edit).
+
+If neither skill is loaded, hold the line on the highest-value rules: one H1, sentence-case headings,
+fenced code with a language, and tables over prose for anything enumerable.
+
+This is guidance, auto-attached by glob (not a hard block). Skip one-line tweaks.

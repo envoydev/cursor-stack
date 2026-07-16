@@ -364,6 +364,12 @@ $CursorRules = @(
   'wpf-conventions.mdc'                       # xaml -> dotnet-wpf
   'scss-conventions.mdc'                      # scss/css -> angular-styling
   'ponytail.mdc'                              # ponytail minimal-code rule (alwaysApply) - vendored here
+  # Repair routing: a red build/suite goes to a resolver seat, not an in-session loop.
+  'dotnet-repair-agents.mdc'                  # cs/csproj/sln/xaml/props -> dotnet-build-error-resolver + dotnet-test-failure-resolver
+  'angular-repair-agents.mdc'                 # ng/spec/scss -> ng-build-error-resolver + angular-test-resolver
+  # Trigger patches: the house skill's own keywords miss a plain content edit, so a glob routes it.
+  'markdown-docs.mdc'                         # md -> markdown-style (+ docs-as-code for ADR/Mermaid/C4)
+  'devops-conventions.mdc'                    # Dockerfile/compose/workflows -> devops
 )
 
 # (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's

@@ -21,6 +21,9 @@ specifics go under `## Per-project additions`.
 > - **Plugins** - Cursor has no `/plugin install`; "plugin" capability is MCPs / native features (Skills,
 >   Bugbot, Rules) / Open-VSX extensions, plus any `/add-plugin` ones (e.g. superpowers). Reflect what is in use.
 >
+> Replace the H1 title with the project's own name - the '(stack-neutral template)' banner is this
+> file's, not the project's, and carries no `<placeholder>` to catch it.
+>
 > Leave no `<placeholder>` behind; if a whole section does not apply to this project, delete it.
 
 ## How to work here
@@ -101,15 +104,13 @@ generated docs, set the root here:
 - **Docs root:** `docs/`
 
 Wherever a skill or agent instruction names a generated project doc as `docs/<name>` (for example
-`docs/architecture/ARCHITECTURE.md`), resolve it under the configured root instead - so with the
-default the path is unchanged. Relocating to `.cursor/docs/` keeps the docs local: `.cursor/` is
-gitignored, so they will NOT be committed, will not survive a fresh clone, and will not reach a
-teammate - keep the root under a committed path (the `docs/` default) unless you specifically want
-them machine-local.
+`docs/architecture/ARCHITECTURE.md`), resolve it under the configured root instead. Relocating to
+`.cursor/docs/` makes the docs machine-local (`.cursor/` is gitignored, so nothing there is
+committed or reaches a teammate) - keep the root under a committed path (the `docs/` default)
+unless you specifically want them machine-local.
 
-Superpowers writes its implementation plans and design specs under this root too -
-`<root>/superpowers/plans/` and `<root>/superpowers/specs/` (default `docs/superpowers/plans/` and
-`docs/superpowers/specs/`) - overriding its own default location so they are committed alongside the
+Superpowers (when installed) writes its implementation plans and design specs under this root too -
+`<root>/superpowers/plans/` and `<root>/superpowers/specs/` - so they are committed alongside the
 other project docs, not left as local scratch. Track them: do NOT gitignore `docs/superpowers/`.
 
 ## Related projects

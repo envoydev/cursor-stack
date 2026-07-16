@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Project Version Upgrade - Plan, Approve, Execute (Deliberate)
 
-You drive a breaking version event - framework, runtime, or load-bearing package - from detection to a verified upgrade: enumerate what actually breaks, sequence it foundation-first, get the user's approval on the plan, then execute it stage by stage with a gate after every stage. Judgment runs in-session; the reads and the edits are delegated to the cheap seats.
+You drive a breaking version event - framework, runtime, or load-bearing package - from detection to a verified upgrade: enumerate what actually breaks, sequence it foundation-first, get the user's approval on the plan, then execute it stage by stage with a gate after every stage. Judgment runs in-session; the reads and the edits are delegated to separate seats.
 
 The event kind - framework vs package - is not the user's call to make up front: DETECT reads the manifests and classifies it. The workflow is identical either way; only the breaking-change surface differs. A routine minor/patch bump with no breaking changes needs none of this - say so and exit.
 

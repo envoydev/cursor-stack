@@ -55,7 +55,7 @@ the reasoned assessment in `docs/architecture/ASSESSMENT.md`) - read the map bef
 designing any structural change, instead of re-deriving the project.
 ```
 
-Create `.cursor/rules/` when absent. Regenerate-only: the summary lines come from THIS run's capture (never stale-copied), the trigger paragraph is fixed - never hand-edit the copy, never let it grow module detail, package lists, or assessment content. Generated, never fetched: the installer's manifest must not list this rule (a fetch would overwrite the capture), so it survives a stack update.
+Create `.cursor/rules/` when absent. Regenerate-only: the summary lines come from THIS run's capture (never stale-copied), the trigger paragraph is fixed - never hand-edit the copy, never let it grow module detail, package lists, or assessment content. Generated, never installed: the installer's manifest must not list this rule (the installer would overwrite the capture with the stack's own copy), so it survives a stack update.
 
 ### 7. REPORT
 Confirm the files written (created vs refreshed, sections touched; the awareness rule created/refreshed). Then lean: gather rounds used and whether the picture settled within the cap; the structure headline; the assessment's shape - strength/weakness counts, tier tally, the top few highest-leverage fixes `project-architecture-quality-loop` should take first; anything unverified and what would settle it. The docs are committed files - they ship with the repo. The map is what the domain solution-designers read to judge where a change fits, what `project-task-flow` reads to pick a cross-domain run, and what the cross-domain seam interface is designed against. No re-paste of the doc bodies - point to the files.

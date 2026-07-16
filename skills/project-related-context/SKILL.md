@@ -11,7 +11,7 @@ You drive the deliberate capture of a project's related repositories, and you ow
 1. `.cursor/rules/baseline-project-related-context.mdc` - the generated AWARENESS rule: pathless, so it loads every session and every subagent - the minimum that makes the siblings exist for the agent (name / location / relation / seam), plus the trigger to read the doc when a task touches a seam.
 2. `docs/PROJECT-RELATED-CONTEXT.md` - the on-demand ORIENTATION doc: the full entries including `first_read` and the evidence behind each relation and seam, read when actually working near a seam. Lives under the project's configured docs root (default `docs/`, per its AGENTS.md).
 
-Both are committed files; a re-run refreshes both in place. The rule's name is deliberately NOT in the stack installer's fetch manifest (and never may be - a fetch would overwrite the generated copy) and nothing prunes the rules directory, so both survive `stack update`.
+Both are committed files; a re-run refreshes both in place. The rule's name is deliberately NOT in the stack installer's RULES manifest (and never may be - the installer would overwrite the generated copy with the stack's own) and nothing prunes the rules directory, so both survive `stack update`.
 
 **Args-driven, never a scan.** The user names the related projects - local paths or git URLs, optionally with a relation hint each (`../backend`, `git@github.com:org/shared-contracts.git provides-to`). In-repo sub-projects are siblings too: `./server`, `./client` in a monorepo are valid locations, and their entries give project-task-flow the dependency direction for producer-first ordering. No args: ask for them and stop. Do not guess at siblings from the filesystem.
 

@@ -30,7 +30,7 @@ The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result
 
 | Component | Lands in | Notes |
 | --------- | -------- | ----- |
-| **Skills** (66) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-task-flow` orchestration + routing (single-stack trios + cross-domain). Vendored in this repo's `skills/`, git-clone + copy at install (`scripts/cursor-stack.sh install skills-only`) |
+| **Skills** (66) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-task-flow` orchestration + routing (single-stack trios + cross-domain). Vendored in this repo's `skills/`, copied at install out of the release archive (clone fallback) (`scripts/cursor-stack.sh install skills-only`) |
 | **MCP servers** (8) | `.cursor/mcp.json` | `angular-cli`, `serena` (`--context ide-assistant`), `playwright`, `memory`, `context7`, plus `chrome-devtools` + `appium-mcp` (heavy - active; comment out where not needed) and `sentry` (error monitoring - hosted remote MCP, `SENTRY_ACCESS_TOKEN` as an OS env var expanded via `${env:VAR}`; comment out without Sentry). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project. Cursor supports MCP natively; shell `${…}` path tokens are resolved to concrete paths and bare `${VAR}` secrets rewritten to `${env:VAR}` (Cursor does no shell interpolation) |
 | **Hooks** (2) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` (`beforeShellExecution`): block force-push to main/master/develop and a recursive rm of /, ~, $HOME, or a bare *. Fetched from the repo's `hooks/` |
 | **Rules** (16) | `.cursor/rules/` | five always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` - `alwaysApply`, the cross-cutting conventions) + the glob-auto-attaching convention rules `csharp` / `typescript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `scss-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `devops-conventions.mdc` (Dockerfile/compose/workflows) + `markdown-docs.mdc` (`.md`, a trigger patch for the doc skills) + the two repair routers `dotnet-repair-agents.mdc` / `angular-repair-agents.mdc` (a red build/suite routes to a resolver seat) + `ponytail.mdc` (minimal-code, `alwaysApply`) |
@@ -97,7 +97,7 @@ The script runs a **prerequisites check first and warns (never fails)** - instal
 | **git** | project-scope path resolution (repo root) | **Yes** for project scope | `brew install git` | `winget install Git.Git` |
 | **uvx** (uv) | `serena` + `memory` MCPs | for those MCPs | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `irm https://astral.sh/uv/install.ps1 \| iex` |
 | **python3** | the `.cursor/mcp.json` + `.cursor/hooks.json` merges (**bash only** - PowerShell merges natively) | **Yes** (bash) | `brew install python` | `winget install Python.Python.3.12` (Store stub does **not** count) |
-| **curl** / `Invoke-WebRequest` | fetching the hook + rule files | for hooks/rules | preinstalled | preinstalled |
+| **curl** / `Invoke-WebRequest` | downloading the release archive every artifact is copied from | for the archive route (git covers the clone fallback) | preinstalled | preinstalled |
 | **brew** / **winget** | `github-cli` extra only | optional | Homebrew | winget |
 
 C# LSP (`csharp-ls`) is only relevant if you add the corresponding Open-VSX extension yourself -
@@ -181,6 +181,6 @@ baked into `.cursor/mcp.json`.
 | MCP dies at launch with `-32000` | Node too old (use ≥ 22.12 LTS); or a stale npm cache against a freshly pinned version. |
 | `serena` / `memory` MCP missing | `uvx` not installed - install uv (see prereqs). `memory` also needs numpy, injected via `--with numpy`. |
 | `.cursor/mcp.json` or `hooks.json` not written | Python 3 missing (bash path) - on Windows the Store stub doesn't count. |
-| Hook / rule not installed | Fetched from GitHub (`…/cursor-stack/main/hooks` and `…/main/rules`); needs `curl`/`Invoke-WebRequest` and the files pushed upstream. Fail-soft keeps any existing copy. |
+| Hook / rule not installed | Copied from the run's source snapshot (the release archive, or a `-b main` clone if that is unreachable) - so the file must be committed + pushed to `main`. Check the `source:` line in the run's output and `.cursor/cursor-stack.stamp` for the commit actually installed. Fail-soft keeps any existing copy. |
 | "not in a git repo - skipping…" | Project scope needs a git repo. Run `git init`, or use `SCOPE=global`. |
 | C# diagnostics absent | Cursor ships no C# language server - install a Roslyn C# extension from Open VSX (see the plugins section). |

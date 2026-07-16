@@ -58,7 +58,7 @@ what they encode and what they cannot. Soft guidance - it never blocks an edit.
 
 Point the body's doc path at the project's configured docs root (per its AGENTS.md) when that is not the default `docs/` - unlike a hook, a rule is prose the agent reads, so the path just needs to be correct in the text.
 
-**Verify what you generated before trusting it:** the frontmatter must parse as YAML (a malformed block silently drops the rule), `globs` must cover exactly the observed union, and the doc path in the body must resolve to a real file. This rule is per-project output, deliberately NOT in the stack installer's RULES manifest - the installer fetches only named files and prunes nothing in `.cursor/rules/`, so `stack update` never touches it.
+**Verify what you generated before trusting it:** the frontmatter must parse as YAML (a malformed block silently drops the rule), `globs` must cover exactly the observed union, and the doc path in the body must resolve to a real file. This rule is per-project output, deliberately NOT in the stack installer's RULES manifest - the installer only writes the files that manifest names and prunes nothing in `.cursor/rules/`, so `stack update` never touches it.
 
 ### 5. REPORT
 Confirm both artifacts (doc created/refreshed + sections touched; rule regenerated, with the glob union). Then briefly: the languages detected, the notable idioms a linter cannot enforce, and any divergence from the house skills worth attention. Both artifacts are committed files - remind the user they ship with the repo. No re-paste of the doc body - point to the file.

@@ -16,7 +16,7 @@ Read `references/doc-shapes.md` (the two docs' required shape) and `references/h
 DELEGATED vs INLINE - the shared policy `project-task-flow` owns. Pick once, hold for the run:
 
 - **DELEGATED** (dispatch available) - dispatch code-analyzer per module as below; reasoning and writing stay here.
-- **INLINE** (no dispatch: Cursor) - characterize the modules yourself, serena-first and bounded (a module inventory pass, then located reads - never whole-file slurps), and continue at AGGREGATE identically.
+- **INLINE** (no dispatch available) - characterize the modules yourself, serena-first and bounded (a module inventory pass, then located reads - never whole-file slurps), and continue at AGGREGATE identically.
 
 ## The run
 

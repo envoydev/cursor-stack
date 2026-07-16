@@ -17,7 +17,7 @@ The per-language configs (`.editorconfig`, eslint/prettier, `tsconfig`, the SQL 
 DELEGATED vs INLINE - and why detection keys on dispatch capability, not file presence - is the shared policy `project-task-flow` owns. Pick once, hold for the run:
 
 - **DELEGATED** (dispatch available) - fan out code-style-analyzer per language as below; you merge and write.
-- **INLINE** (no dispatch: Cursor, or a single-language repo too small to fan out) - do the same characterization in-session, one language at a time, honoring the agent's own rules (config first, located code second, 2 locating passes per language, divergence flagged) - then continue at MERGE identically.
+- **INLINE** (no dispatch available, or a single-language repo too small to fan out) - do the same characterization in-session, one language at a time, honoring the agent's own rules (config first, located code second, 2 locating passes per language, divergence flagged) - then continue at MERGE identically.
 
 ## The run
 

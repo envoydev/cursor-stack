@@ -1,6 +1,6 @@
 ---
 name: project-implementer
-description: "Use when you have a task plan in hand - from project-solution-design, ideally gated by project-verify-plan - and want to BUILD it in the current chat, task by task: the single-chat form of the implementer seat's execution protocol. Honors each task's contract (files owned, traps named, anchors, acceptance criterion), builds code + tests per task, gates each task green before the next, resolves every red INLINE in the current session (it never dispatches an agent), and finishes by handing to /code-review + the done-gate - completing the in-session designer -> implementer -> verifier vertical. Trigger on execute the plan, build the plan, implement the tasks, build task 2, continue the plan. Not for dispatching parallel implementers (that is project-task-flow), and not a plan-less ad-hoc edit - just make those."
+description: "Use when you have a task plan in hand - from project-solution-design, ideally gated by project-verify-plan - and want to BUILD it in the current chat, task by task: the single-chat form of the implementer seat's execution protocol. Honors each task's contract (files owned, traps named, anchors, acceptance criterion), builds code + tests per task, gates each task green before the next, resolves every red INLINE in the current session (it never dispatches an agent), and finishes by handing to /review (Bugbot) + the done-gate - completing the in-session designer -> implementer -> verifier vertical. Trigger on execute the plan, build the plan, implement the tasks, build task 2, continue the plan. Not for dispatching parallel implementers (that is project-task-flow), and not a plan-less ad-hoc edit - just make those."
 disable-model-invocation: true
 ---
 
@@ -23,7 +23,7 @@ This is the build step of the single-session vertical: `project-solution-design`
 
 ## Finish - the in-session verifier
 
-All tasks green: run the full suite once, then `/code-review` over the assembled diff (the single-chat form of the verifier seat) and apply its findings; then the done-gate on the whole feature. Report against the plan, one line per task - `task | status (DONE / deferred / revised) | evidence (the green command and what it proved)` - then the suite + `/code-review` result, and anything deferred or revised with its reason. The vertical is complete: design (`project-solution-design`) -> audit (`project-verify-plan`) -> build (this) -> review (`/code-review`) - one session, every step inspectable.
+All tasks green: run the full suite once, then `/review` (Bugbot) over the assembled diff (the single-chat form of the verifier seat) and apply its findings; then the done-gate on the whole feature. Report against the plan, one line per task - `task | status (DONE / deferred / revised) | evidence (the green command and what it proved)` - then the suite + `/review` result, and anything deferred or revised with its reason. The vertical is complete: design (`project-solution-design`) -> audit (`project-verify-plan`) -> build (this) -> review (`/review` - Bugbot) - one session, every step inspectable.
 
 ## Example
 
@@ -32,13 +32,13 @@ Executing the records-list export plan (the `project-solution-design` example, g
 - Task 1 - jump to the plan's query-seam anchor, add the export projection + its streaming test (rows streamed, never materialized - the card's trap), thread the cancellation token per the audit. Module tests green, output quoted. DONE.
 - Task 2 - the streamed export entry point on the Task 1 seam, mapped to a transfer shape at the edge (the card's boundary trap). Tests green. DONE.
 - Task 3 - integration test: header row, one data row, success status, and the audit's empty-set shape. Green on the full suite. DONE.
-- Finish - full suite once, `/code-review` over the assembled diff (one finding: a stray debug log - fixed), done-gate run.
+- Finish - full suite once, `/review` (Bugbot) over the assembled diff (one finding: a stray debug log - fixed), done-gate run.
 
 ```text
 task 1 export projection | DONE | module tests green (streamed, cancellation threaded)
 task 2 streamed endpoint | DONE | tests green (edge maps to transfer shape)
 task 3 integration test  | DONE | full suite green incl. empty-set shape
-suite + /code-review: green, 1 finding fixed; nothing deferred
+suite + /review: green, 1 finding fixed; nothing deferred
 ```
 
 ## Don't game it

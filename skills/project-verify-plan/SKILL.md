@@ -1,17 +1,17 @@
 ---
 name: project-verify-plan
-description: Use when you have an implementation plan or design in hand and want to audit it BEFORE writing code - a risk-coverage review that checks the plan names the non-obvious traps its stack will actually hit, matches the requirement's scope, covers the edge and safety cases, and stays minimal. The cheapest place to catch a design error, since a flawed plan built perfectly is still wrong. Pairs with writing-plans (which creates the plan) and precedes /code-review (which reviews the built code). Trigger on review this plan, is this design sound, does the plan miss anything, before I build.
+description: Use when you have an implementation plan or design in hand and want to audit it BEFORE writing code - a risk-coverage review that checks the plan names the non-obvious traps its stack will actually hit, matches the requirement's scope, covers the edge and safety cases, and stays minimal. The cheapest place to catch a design error, since a flawed plan built perfectly is still wrong. Pairs with writing-plans (which creates the plan) and precedes /review (Bugbot, which reviews the built code). Trigger on review this plan, is this design sound, does the plan miss anything, before I build.
 disable-model-invocation: true
 ---
 
 # Verify Plan - a risk-coverage audit of a plan before you build
 
-A plan built perfectly is still wrong if the plan was wrong - the design carries the quality: a build handles the traps its plan names and ships the ones it misses, and catching the miss here on the page is cheaper than any downstream gate (the code, the tests, /code-review). This reviews an EXISTING plan or design (yours, or one `superpowers:writing-plans` produced) for the defects that are expensive to discover later. It does not write or fix code; it flags gaps in the plan and hands them back.
+A plan built perfectly is still wrong if the plan was wrong - the design carries the quality: a build handles the traps its plan names and ships the ones it misses, and catching the miss here on the page is cheaper than any downstream gate (the code, the tests, /review). This reviews an EXISTING plan or design (yours, or one `superpowers:writing-plans` produced) for the defects that are expensive to discover later. It does not write or fix code; it flags gaps in the plan and hands them back.
 
 ## When to use / not
 
 - Use it the moment a plan exists and before implementation starts - especially for anything with a boundary, state, auth, migration, or concurrency surface.
-- Not code review - that is `/code-review`, after the build.
+- Not code review - that is `/review` (Bugbot), after the build.
 - Not plan *creation* - that is `superpowers:writing-plans` / `superpowers:brainstorming`. This audits a plan that already exists.
 
 ## The audit - four passes, in order

@@ -12,5 +12,6 @@ If the `database-conventions` skill is not loaded, hold the line on the highest-
 always qualify a `DELETE` / `UPDATE` with a `WHERE`, and make every migration forward-only
 and idempotent rather than editing one already applied.
 
-This is guidance, auto-attached by glob (not a hard block). Scoped to hand-written SQL; ORM
-access written in `.cs` follows the C# conventions instead.
+This is guidance, auto-attached by glob (not a hard block). Scoped to hand-written SQL; ORM /
+EF query logic lives in a `.cs` file and routes through `csharp` and `dotnet-data-access`
+instead.

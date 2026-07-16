@@ -436,52 +436,100 @@ function Get-CursorSkillsDest {
 }
 
 # ===========================================================================
-# SOURCE CLONE - the ONE revision every artifact in a run comes from
+# SOURCE - the ONE revision every artifact in a run comes from
 # ===========================================================================
 # Every file this stack installs (skills, hooks, agents, rules) lives in this one repo, so a run
-# takes ONE shallow clone and copies out of it. That replaced the per-file
+# resolves ONE source snapshot and copies out of it. That replaced the per-file
 # raw.githubusercontent.com fetches for hooks/rules/agents, for two reasons:
 #   - Correctness: raw.githubusercontent.com is CDN-cached (~5 min to propagate after a push), while
-#     the clone is not. A run that mixed the two could straddle a push and install skills from one
-#     revision and agents/rules/hooks from another - silently. One clone cannot.
-#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into the clone the run was
-#     already making for skills. The files were always in that clone; nothing fetched them from it.
-# Fail-soft is unchanged: a clone that fails leaves $SourceDir empty, every per-file step keeps any
-# existing local copy, and $StackSha stays empty - which is what suppresses the stamp write, because
-# a wrong stamp is worse than none.
-$script:SourceDir = ''
+#     one snapshot is not. A run that mixed the two could straddle a push and install skills from one
+#     revision and agents/rules/hooks from another - silently. One snapshot cannot.
+#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into a single fetch.
+# The snapshot is the rolling release archive first (one asset = one revision, and no git needed to
+# take it; the RELEASE-SOURCE file inside names the commit), falling back to a shallow clone when no
+# release is reachable - a fork without releases, a blocked CDN, or a local path used by the tests.
+# This twin takes the .zip asset (Expand-Archive is native); the .sh twin takes the .tar.gz. The
+# release publishes both for exactly that reason.
+# Fail-soft is unchanged: no source leaves $SourceDir empty, every per-file step keeps any existing
+# local copy, and $StackSha stays empty - which is what suppresses the stamp write, because a wrong
+# stamp is worse than none.
+$script:SourceDir = ''      # the tree we copy out of
+$script:SourceRoot = ''     # what to remove (archive route nests SourceDir under it)
 $script:SourceRepoUrl = ''
 $script:StackSha = ''
+$script:StackRef = ''
 $script:SourceFailed = $false
 
-function Initialize-Source {
-  if ($script:SourceDir) { return $true }                  # one clone per run - resolved already
-  if ($script:SourceFailed) { return $false }              # ... and one attempt: don't retry per artifact
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Log '  !! git not found - no source clone'; $script:SourceFailed = $true; return $false
+function Read-ReleaseSource {
+  # An extracted release archive carries its revision in RELEASE-SOURCE, not in git history.
+  param([string]$Dir)
+  $f = Join-Path $Dir 'RELEASE-SOURCE'
+  if (-not (Test-Path -LiteralPath $f)) { return }
+  foreach ($line in Get-Content -LiteralPath $f) {
+    if ($line -match '^sha:\s*(.+)$') { $script:StackSha = $Matches[1].Trim() }
+    elseif ($line -match '^ref:\s*(.+)$') { $script:StackRef = $Matches[1].Trim() }
   }
+}
+
+function Initialize-Source {
+  # Resolves on the first call; every later caller reuses it. Memoise BOTH outcomes: five steps call
+  # this, and without the failure latch an offline run pays five timeouts for one root cause.
+  if ($script:SourceDir) { return $true }                  # one source per run - resolved already
+  if ($script:SourceFailed) { return $false }              # ... and one attempt: don't retry per artifact
+  $hasGit = [bool](Get-Command git -ErrorAction SilentlyContinue)
   $script:SourceRepoUrl = if ($env:STACK_SOURCE_REPO) { $env:STACK_SOURCE_REPO }
                           elseif ($env:STACK_SKILLS_REPO) { $env:STACK_SKILLS_REPO }
                           else { 'https://github.com/envoydev/cursor-stack' }
+
+  # Release archive first: one asset is one revision, and no git is needed to take it. The sanity
+  # check (skills/ + agents/ present) matters - a wrong URL that 200s would otherwise 'install'
+  # nothing and report 47 per-file failures for one bad source.
   $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
   New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-  Log "source: cloning $($script:SourceRepoUrl) (one clone per run - skills, hooks, rules, agents)"
+  $url = "$($script:SourceRepoUrl)/releases/latest/download/cursor-stack.zip"
+  $repo = Join-Path $tmp 'repo'
+  try {
+    Invoke-WebRequest -Uri $url -OutFile (Join-Path $tmp 'cursor-stack.zip') -UseBasicParsing -ErrorAction Stop
+    Expand-Archive -LiteralPath (Join-Path $tmp 'cursor-stack.zip') -DestinationPath $repo -Force
+  } catch { <# fall through to the clone below #> }
+  if ((Test-Path -LiteralPath (Join-Path $repo 'skills') -PathType Container) -and
+      (Test-Path -LiteralPath (Join-Path $repo 'agents') -PathType Container)) {
+    $script:SourceDir = $repo
+    $script:SourceRoot = $tmp
+    Read-ReleaseSource -Dir $repo
+    $shortSha = if ($script:StackSha) { $script:StackSha.Substring(0, [Math]::Min(12, $script:StackSha.Length)) } else { 'unknown' }
+    $refName = if ($script:StackRef) { $script:StackRef } else { '?' }
+    Log "source: release archive @ $refName $shortSha ($url)"
+    return $true
+  }
+  Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+
+  # Fallback: a shallow clone - a fork without releases, a blocked release CDN, or a local test path.
+  if (-not $hasGit) { Log '  !! release archive unreachable and git not found - no source'; $script:SourceFailed = $true; return $false }
+  $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+  New-Item -ItemType Directory -Path $tmp -Force | Out-Null
   & git clone --depth 1 $script:SourceRepoUrl $tmp *> $null
   if ($LASTEXITCODE -ne 0) {
-    Log "  !! clone of $($script:SourceRepoUrl) failed - every artifact step keeps its existing copy"
+    Log "  !! release archive and clone of $($script:SourceRepoUrl) both failed - every artifact step keeps its existing copy"
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     $script:SourceFailed = $true; return $false
   }
   $script:SourceDir = $tmp
+  $script:SourceRoot = $tmp
   $sha = (& git -C $tmp rev-parse HEAD 2>$null)
   $script:StackSha = if ($LASTEXITCODE -eq 0 -and $sha) { "$sha".Trim() } else { '' }
-  if ($script:StackSha) { Log "source: $($script:SourceRepoUrl) @ $($script:StackSha.Substring(0,12))" }
-  else { Log "source: $($script:SourceRepoUrl) (no revision resolved - no stamp this run)" }
+  $r = (& git -C $tmp rev-parse --abbrev-ref HEAD 2>$null)
+  $script:StackRef = if ($LASTEXITCODE -eq 0 -and $r) { "$r".Trim() } else { '' }
+  if ($script:StackSha) {
+    $refName = if ($script:StackRef) { $script:StackRef } else { '?' }
+    Log "source: clone fallback @ $refName $($script:StackSha.Substring(0,12)) ($($script:SourceRepoUrl))"
+  }
+  else { Log "source: clone fallback ($($script:SourceRepoUrl); no revision - no stamp this run)" }
   return $true
 }
 
 function Remove-Source {
-  if ($script:SourceDir) { Remove-Item -LiteralPath $script:SourceDir -Recurse -Force -ErrorAction SilentlyContinue }
+  if ($script:SourceRoot) { Remove-Item -LiteralPath $script:SourceRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 # The install is versioned, not the file: Cursor has no per-artifact version field (SKILL.md is

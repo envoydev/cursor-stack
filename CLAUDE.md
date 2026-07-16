@@ -6,8 +6,8 @@ The single source of truth for the **Cursor** half of a personal coding-agent se
 application. It was split out of the Claude stack (`claude-stack`, still the peer repo, renamed
 from `agents-stack`), and is now **fully standalone**: this repo owns the whole Cursor delivery -
 the installers, the 65 vendored skills, the 33 Cursor-contract subagents, the `.mdc` rules, the
-hooks, and the `templates/AGENTS.template.md` base template. The installer clones THIS repo to copy
-`skills/` in, so nothing is fetched from the peer at install. Consuming projects pull from here -
+hooks, and the `templates/AGENTS.template.md` base template. The installer downloads THIS repo's
+release archive (clone fallback) to copy `skills/` in, so nothing is fetched from the peer at install. Consuming projects pull from here -
 they do not own their copy; a change made only inside a consuming project is throwaway (see
 Invariants).
 
@@ -19,7 +19,7 @@ Invariants).
 - `templates/AGENTS.template.md` - the stack-neutral per-project skeleton each consuming project's
   `AGENTS.md` is filled in from (Cursor reads `AGENTS.md`).
 - `skills/` - the 65 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
-  `SKILL.md`), copied into a project's `.cursor/skills/` by the installer's git-clone step. The
+  `SKILL.md`), copied into a project's `.cursor/skills/` out of the run's source snapshot. The
   14 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
   repo-level skills: the skill loads only on an explicit `/name`).
 - `agents/` - the 33 Cursor-contract subagents, fetched into a project's `.cursor/agents/`.
@@ -43,14 +43,23 @@ Invariants).
 ## The ownership model - everything is owned here
 
 - **Owned here:** everything - skills, agents, rules, hooks, template, installers, HTML. Every
-  artifact is copied out of ONE depth-1 clone of THIS repo per run (`STACK_SOURCE_REPO` overrides
-  the source; `STACK_SKILLS_REPO` is the legacy alias), so a change ships only once committed +
-  pushed; until then the per-file fail-soft keeps any existing copy. One clone, not a clone plus
-  ~47 per-file `raw.githubusercontent.com` fetches: raw is CDN-cached (~5 min after a push) and
-  the clone is not, so the old split could straddle a push and install skills from one revision
-  and agents/rules/hooks from another. Each run stamps `.cursor/cursor-stack.stamp` with the
-  source commit - Cursor has no per-artifact `version:` field, so the INSTALL is what gets
-  versioned. A run that resolves no revision writes no stamp: a wrong stamp is worse than none.
+  artifact is copied out of ONE source snapshot per run (`STACK_SOURCE_REPO` overrides the source;
+  `STACK_SKILLS_REPO` is the legacy alias), so a change ships only once committed + pushed to
+  `main`; until then the per-file fail-soft keeps any existing copy. One snapshot, not ~47 per-file
+  `raw.githubusercontent.com` fetches: raw is CDN-cached (~5 min after a push) and a snapshot is
+  not, so the old split could straddle a push and install skills from one revision and
+  agents/rules/hooks from another.
+- **The snapshot is the rolling release archive, then a clone.** `release.yml` republishes the
+  rolling `latest` release on every push to `main` (a tar.gz + a zip of that revision, each
+  carrying a `RELEASE-SOURCE` file naming the commit). A run downloads it - one asset is one
+  revision, and taking it needs no git - and falls back to a shallow clone only when no release is
+  reachable: a fork without releases, a blocked CDN, a local path (which is how the tests and CI
+  drive it), or the brief window the release job's delete/recreate opens. The `.sh` takes the
+  tar.gz, the `.ps1` takes the zip (`Expand-Archive` is native) - that is why both are published.
+  Each run stamps `.cursor/cursor-stack.stamp` with the source commit (from `RELEASE-SOURCE` on the
+  archive route, from `HEAD` on the clone route) - Cursor has no per-artifact `version:` field, so
+  the INSTALL is what gets versioned. A run that resolves no revision writes no stamp: a wrong
+  stamp is worse than none.
 - **The peer repo (`claude-stack`) is a SIBLING, not an upstream.** The two stacks were forked
   from one source and still share skill *content* and the `MCPS` baseline by descent, so a
   baseline improvement is usually worth porting BOTH ways - but nothing here reads from there at

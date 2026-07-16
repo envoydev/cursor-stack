@@ -1,0 +1,48 @@
+name: release
+
+# Rebuild the rolling 'latest' release on every push to main: one tar.gz + one zip source
+# snapshot per revision, with a RELEASE-SOURCE file inside naming the exact commit. The
+# installers (cursor-stack.sh / .ps1) download this instead of cloning - one asset is one
+# revision, and taking it needs no git. A shallow clone stays their fallback for when no
+# release is reachable (a fork without releases, a blocked CDN, a local path in the tests,
+# and the brief delete/recreate window this job opens).
+#
+# main only, on purpose: develop carries the work, main is what consumers install. Nothing
+# publishes until a develop -> main promotion.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the source archives
+        run: |
+          printf 'sha: %s\nref: main\nbuilt: %s\n' "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > RELEASE-SOURCE
+          git archive --format=tar.gz --add-file=RELEASE-SOURCE -o cursor-stack.tar.gz HEAD
+          git archive --format=zip    --add-file=RELEASE-SOURCE -o cursor-stack.zip    HEAD
+
+          # The installers sanity-check for skills/ + agents/ and read RELEASE-SOURCE; if a
+          # refactor ever drops one from the archive, fail here rather than ship a snapshot
+          # every consumer would reject as 'not a cursor-stack checkout'.
+          mkdir -p _verify && tar -xzf cursor-stack.tar.gz -C _verify
+          test -d _verify/skills && test -d _verify/agents && test -f _verify/RELEASE-SOURCE
+          grep -q "^sha: ${GITHUB_SHA}$" _verify/RELEASE-SOURCE
+          echo "archive OK: $(find _verify/skills -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') skills, RELEASE-SOURCE names ${GITHUB_SHA}"
+          rm -rf _verify
+
+      - name: Recreate the rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest cursor-stack.tar.gz cursor-stack.zip \
+            --latest --title 'cursor-stack (rolling)' \
+            --notes "Source snapshot of main @ ${GITHUB_SHA} - consumed by the stack installers. RELEASE-SOURCE inside each archive names this commit; not meant for manual download."

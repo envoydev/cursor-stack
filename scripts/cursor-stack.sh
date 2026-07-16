@@ -387,43 +387,69 @@ CURSOR_AGENTS=(
 # (mcp.json: install skips an already-present server / update re-writes it; hooks.json / rules skip if already wired)
 # ===========================================================================
 # ===========================================================================
-# SOURCE CLONE - the ONE revision every artifact in a run comes from
+# SOURCE - the ONE revision every artifact in a run comes from
 # ===========================================================================
 # Every file this stack installs (skills, hooks, agents, rules) lives in this one repo, so a run
-# takes ONE shallow clone and copies out of it. That replaced the per-file
+# resolves ONE source snapshot and copies out of it. That replaced the per-file
 # raw.githubusercontent.com fetches for hooks/rules/agents, for two reasons:
 #   - Correctness: raw.githubusercontent.com is CDN-cached (~5 min to propagate after a push), while
-#     the clone is not. A run that mixed the two could straddle a push and install skills from one
-#     revision and agents/rules/hooks from another - silently. One clone cannot.
-#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into the clone the run was
-#     already making for skills. The files were always in that clone; nothing fetched them from it.
-# Fail-soft is unchanged: a clone that fails leaves SOURCE_DIR empty, every per-file step keeps any
-# existing local copy, and STACK_SHA stays empty - which is what suppresses the stamp write, because
-# a wrong stamp is worse than none.
-SOURCE_DIR=""
+#     one snapshot is not. A run that mixed the two could straddle a push and install skills from one
+#     revision and agents/rules/hooks from another - silently. One snapshot cannot.
+#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into a single fetch.
+# The snapshot is the rolling release archive first (one asset = one revision, and no git needed to
+# take it; the RELEASE-SOURCE file inside names the commit), falling back to a shallow clone when no
+# release is reachable - a fork without releases, a blocked CDN, or a local path used by the tests.
+# Fail-soft is unchanged: no source leaves SOURCE_DIR empty, every per-file step keeps any existing
+# local copy, and STACK_SHA stays empty - which is what suppresses the stamp write, because a wrong
+# stamp is worse than none.
+SOURCE_DIR=""        # the tree we copy out of
+SOURCE_ROOT=""       # what to rm -rf (archive route nests SOURCE_DIR under it)
 SOURCE_REPO_URL=""
 STACK_SHA=""
+STACK_REF=""
 SOURCE_FAILED=false
 
 ensure_source() {
-  [ -n "$SOURCE_DIR" ] && return 0                       # one clone per run - resolved already
+  # Resolves on the first call; every later caller reuses it. Memoise BOTH outcomes: five steps call
+  # this, and without the failure latch an offline run pays five timeouts for one root cause.
+  [ -n "$SOURCE_DIR" ] && return 0                       # one source per run - resolved already
   [ "$SOURCE_FAILED" = true ] && return 1                # ... and one attempt: don't retry per artifact
-  command -v git >/dev/null 2>&1 || { log "  !! git not found - no source clone"; SOURCE_FAILED=true; return 1; }
-  local tmp
+  local tmp url
   SOURCE_REPO_URL="${STACK_SOURCE_REPO:-${STACK_SKILLS_REPO:-https://github.com/envoydev/cursor-stack}}"
+
+  # Release archive first: one asset is one revision, and no git is needed to take it. The sanity
+  # check (skills/ + agents/ present) matters - a wrong URL that 200s would otherwise 'install'
+  # nothing and report 47 per-file failures for one bad source.
   tmp="$(mktemp -d)"
-  log "source: cloning $SOURCE_REPO_URL (one clone per run - skills, hooks, rules, agents)"
+  url="$SOURCE_REPO_URL/releases/latest/download/cursor-stack.tar.gz"
+  if command -v curl >/dev/null 2>&1 &&
+     curl -fsSL "$url" -o "$tmp/cursor-stack.tar.gz" 2>/dev/null &&
+     mkdir -p "$tmp/repo" &&
+     tar -xzf "$tmp/cursor-stack.tar.gz" -C "$tmp/repo" 2>/dev/null &&
+     [ -d "$tmp/repo/skills" ] && [ -d "$tmp/repo/agents" ]; then
+    SOURCE_DIR="$tmp/repo"; SOURCE_ROOT="$tmp"
+    STACK_SHA="$(sed -n 's/^sha: //p' "$tmp/repo/RELEASE-SOURCE" 2>/dev/null | head -1)"
+    STACK_REF="$(sed -n 's/^ref: //p' "$tmp/repo/RELEASE-SOURCE" 2>/dev/null | head -1)"
+    log "source: release archive @ ${STACK_REF:-?} $(printf '%.12s' "${STACK_SHA:-unknown}") ($url)"
+    return 0
+  fi
+  rm -rf "$tmp"
+
+  # Fallback: a shallow clone - a fork without releases, a blocked release CDN, or a local test path.
+  command -v git >/dev/null 2>&1 || { log "  !! release archive unreachable and git not found - no source"; SOURCE_FAILED=true; return 1; }
+  tmp="$(mktemp -d)"
   if ! git clone --depth 1 "$SOURCE_REPO_URL" "$tmp" >/dev/null 2>&1; then
-    log "  !! clone of $SOURCE_REPO_URL failed - every artifact step keeps its existing copy"
+    log "  !! release archive and clone of $SOURCE_REPO_URL both failed - every artifact step keeps its existing copy"
     rm -rf "$tmp"; SOURCE_FAILED=true; return 1
   fi
-  SOURCE_DIR="$tmp"
+  SOURCE_DIR="$tmp"; SOURCE_ROOT="$tmp"
   STACK_SHA="$(git -C "$tmp" rev-parse HEAD 2>/dev/null || true)"
-  [ -n "$STACK_SHA" ] && log "source: $SOURCE_REPO_URL @ ${STACK_SHA:0:12}" \
-                      || log "source: $SOURCE_REPO_URL (no revision resolved - no stamp this run)"
+  STACK_REF="$(git -C "$tmp" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  [ -n "$STACK_SHA" ] && log "source: clone fallback @ ${STACK_REF:-?} ${STACK_SHA:0:12} ($SOURCE_REPO_URL)" \
+                      || log "source: clone fallback ($SOURCE_REPO_URL; no revision - no stamp this run)"
   return 0
 }
-cleanup_source() { [ -n "$SOURCE_DIR" ] && rm -rf "$SOURCE_DIR"; return 0; }
+cleanup_source() { [ -n "$SOURCE_ROOT" ] && rm -rf "$SOURCE_ROOT"; return 0; }
 trap cleanup_source EXIT
 
 # The install is versioned, not the file: Cursor has no per-artifact version field (SKILL.md is

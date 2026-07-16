@@ -13,9 +13,11 @@ argument**.
 
 The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result**.
 
-> Every artifact - skills, agents, rules, hooks - lives in this repo, and one depth-1 clone per run
+> Every artifact - skills, agents, rules, hooks - lives in this repo, and one source snapshot per run
 > serves all of them (`STACK_SOURCE_REPO` overrides the source), so the stack is self-sourcing and a
-> run cannot mix revisions. Each run stamps `.cursor/cursor-stack.stamp` with the source commit. The lint enforces that
+> run cannot mix revisions. That snapshot is the rolling release archive (no git needed to take it),
+> falling back to a shallow clone when no release is reachable. Each run stamps
+> `.cursor/cursor-stack.stamp` with the source commit. The lint enforces that
 > the `.sh`/`.ps1` twins agree and that every manifest entry has a real `skills/` dir. Cursor has
 > **no `/plugin install`** system, so there is no plugins block - capabilities come from natives /
 > Open-VSX extensions / MCPs instead (see below). To trim or extend, comment/uncomment manifest

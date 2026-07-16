@@ -6,9 +6,11 @@ name: ci
 #                       skill frontmatter, reference resolution, the no-framing guard.
 #                       The lint is dependency-free by design, so there is no install step
 #                       and no lockfile question - node + `npm run lint` is the whole job.
-#   installer-linux   - the .sh actually RUNS - skills-only, then a full install that asserts the
-#                       source clone serves the whole tree (one clone, zero per-file fetches) and
-#                       stamps the commit it came from.
+#   installer-linux   - the .sh actually RUNS - skills-only, a full install over the clone
+#                       fallback, and a full install over a SERVED release archive. Both source
+#                       routes are covered on purpose: a local STACK_SOURCE_REPO has no releases,
+#                       so it only ever exercises the fallback - the archive route (what real
+#                       consumers take) would otherwise ship untested.
 #   installer-windows - the .ps1 actually RUNS, on a native x86 PowerShell - the only place the
 #                       Windows-only branches (winget, WindowsApps) are real. A dev box can run
 #                       the twin under a native pwsh (homebrew ships an arm64 build; only the
@@ -18,8 +20,10 @@ name: ci
 #                       reaches; the run then proves the install path end to end.
 #
 # Both installer jobs drive `install skills-only` (which exits before the prerequisite check) and
-# then a full `install`. STACK_SOURCE_REPO / STACK_SKILLS_REPO point at the checkout, so the clone
-# is offline and deterministic - it tests THIS commit's artifacts, not whatever is on main.
+# then a full `install`. STACK_SOURCE_REPO / STACK_SKILLS_REPO point at the checkout, so the run
+# is offline and deterministic - it tests THIS commit's artifacts, not whatever is on main. A
+# local path has no releases, so that route is the clone fallback; the archive route is covered
+# separately by serving a real snapshot of THIS commit over localhost.
 # Both twins resolve the target project with `git rev-parse --show-toplevel`, so the fixture
 # has to be a real git repo, not a bare directory.
 
@@ -62,7 +66,7 @@ jobs:
           test -f "$proj/.cursor/skills/create-ticket/SKILL.md"
           echo "installer-linux: install path OK"
 
-      - name: full install - one clone serves the whole tree, and stamps it
+      - name: full install (clone fallback) - one source serves the whole tree, and stamps it
         env:
           STACK_SOURCE_REPO: ${{ github.workspace }}
         run: |
@@ -72,9 +76,10 @@ jobs:
           git init -q . && git config user.email ci@example.com && git config user.name ci
           bash "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" install 2>&1 | tee run.log
 
-          # The whole point of the source clone: ONE clone, and every hook/rule/agent copied out of
-          # it rather than fetched per-file. A regression here is silent, so assert the counts.
-          test "$(grep -c 'one clone per run' run.log)" = 1
+          # The whole point of the source snapshot: ONE resolution, and every hook/rule/agent copied
+          # out of it rather than fetched per-file. A regression here is silent, so assert it.
+          test "$(grep -cE 'source: (release archive|clone fallback)' run.log)" = 1
+          grep -q 'source: clone fallback' run.log   # a local path has no releases - this IS the fallback
           test "$(grep -c 'fetched ->' run.log)" = 0
           agents=$(ls "$proj/.cursor/agents"/*.md | wc -l | tr -d ' ')
           rules=$(ls "$proj/.cursor/rules"/*.mdc | wc -l | tr -d ' ')
@@ -87,6 +92,33 @@ jobs:
           # The stamp must name the commit actually installed - not a stale or invented one.
           grep -q "^source_commit=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)$" "$proj/.cursor/cursor-stack.stamp"
           echo "installer-linux: full tree + stamp OK"
+
+      # The route real consumers take. A local STACK_SOURCE_REPO can only test the fallback, so
+      # build the same snapshot release.yml would publish, serve it, and install from it for real.
+      - name: archive route - install from a served release snapshot
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          rel="$RUNNER_TEMP/rel/releases/latest/download"
+          mkdir -p "$rel"
+          printf 'sha: %s\nref: main\nbuilt: ci\n' "$GITHUB_SHA" > RELEASE-SOURCE
+          git archive --format=tar.gz --add-file=RELEASE-SOURCE -o "$rel/cursor-stack.tar.gz" HEAD
+          rm -f RELEASE-SOURCE
+          ( cd "$RUNNER_TEMP/rel" && nohup python3 -m http.server 8799 >/dev/null 2>&1 & )
+          for i in $(seq 1 20); do curl -fsS -o /dev/null "http://localhost:8799/releases/latest/download/cursor-stack.tar.gz" && break || sleep 0.5; done
+
+          proj="$RUNNER_TEMP/arch"
+          mkdir -p "$proj" && cd "$proj"
+          git init -q . && git config user.email ci@example.com && git config user.name ci
+          STACK_SOURCE_REPO=http://localhost:8799 bash "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" install 2>&1 | tee run.log
+
+          grep -q 'source: release archive' run.log   # took the archive, NOT the clone fallback
+          test "$(grep -c 'fetched ->' run.log)" = 0
+          test "$(find "$proj/.cursor/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" \
+             = "$(find "$GITHUB_WORKSPACE/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          # The stamp must come from the archive's RELEASE-SOURCE (an archive has no git history).
+          grep -q "^source_commit=${GITHUB_SHA}$" "$proj/.cursor/cursor-stack.stamp"
+          echo "installer-linux: archive route + RELEASE-SOURCE stamp OK"
 
   installer-windows:
     runs-on: windows-latest
@@ -146,12 +178,14 @@ jobs:
           & "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1" install *>&1 | Tee-Object -FilePath run.log
           if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
 
-          # The whole point of the source clone: ONE clone, and every hook/rule/agent copied out of
-          # it rather than fetched per-file. A regression here is silent, so assert the counts.
+          # The whole point of the source snapshot: ONE resolution, and every hook/rule/agent copied
+          # out of it rather than fetched per-file. A regression here is silent, so assert it.
           $log = Get-Content run.log -Raw
-          $clones = ([regex]::Matches($log, 'one clone per run')).Count
-          if ($clones -ne 1) { throw "expected 1 clone, got $clones" }
-          if ($log -match 'fetched ->') { throw 'a per-file fetch happened - the source clone was bypassed' }
+          $srcs = ([regex]::Matches($log, 'source: (release archive|clone fallback)')).Count
+          if ($srcs -ne 1) { throw "expected 1 source resolution, got $srcs" }
+          # A local path has no releases, so this run IS the fallback route.
+          if ($log -notmatch 'source: clone fallback') { throw 'expected the clone fallback for a local source path' }
+          if ($log -match 'fetched ->') { throw 'a per-file fetch happened - the source snapshot was bypassed' }
 
           # lint already gates disk == manifest, so the repo's own dirs are the contract here.
           foreach ($kind in @(@('agents','*.md'), @('rules','*.mdc'), @('hooks','*.js'))) {
@@ -167,3 +201,48 @@ jobs:
             throw "stamp does not name HEAD ($head)"
           }
           'installer-windows: full tree + stamp OK'
+
+      # The route real consumers take. This twin takes the .zip asset (Expand-Archive is native),
+      # so the zip half of the release is only ever proven here.
+      - name: archive route - install from a served release snapshot
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:GITHUB_WORKSPACE
+          $rel = Join-Path $env:RUNNER_TEMP 'rel/releases/latest/download'
+          New-Item -ItemType Directory -Path $rel -Force | Out-Null
+          "sha: $env:GITHUB_SHA`nref: main`nbuilt: ci" | Set-Content -LiteralPath RELEASE-SOURCE -NoNewline
+          & git archive --format=zip --add-file=RELEASE-SOURCE -o (Join-Path $rel 'cursor-stack.zip') HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'git archive failed' }
+          Remove-Item RELEASE-SOURCE -Force
+
+          $srv = Start-Process python -ArgumentList '-m','http.server','8799' -WorkingDirectory (Join-Path $env:RUNNER_TEMP 'rel') -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..20) {
+              try { Invoke-WebRequest -Uri 'http://localhost:8799/releases/latest/download/cursor-stack.zip' -OutFile $env:TEMP\probe.zip -UseBasicParsing -ErrorAction Stop; $ok = $true; break }
+              catch { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $ok) { throw 'fake release server never came up' }
+
+            $proj = Join-Path $env:RUNNER_TEMP 'arch'
+            New-Item -ItemType Directory -Path $proj -Force | Out-Null
+            Set-Location $proj
+            git init -q .; git config user.email ci@example.com; git config user.name ci
+            $env:STACK_SOURCE_REPO = 'http://localhost:8799'
+            & "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1" install *>&1 | Tee-Object -FilePath run.log
+            if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
+
+            $log = Get-Content run.log -Raw
+            if ($log -notmatch 'source: release archive') { throw 'did not take the archive route' }
+            if ($log -match 'fetched ->') { throw 'a per-file fetch happened' }
+            $want = (Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE 'skills') -Directory).Count
+            $got  = (Get-ChildItem -Path (Join-Path $proj '.cursor/skills') -Directory).Count
+            if ($want -ne $got) { throw "skills: expected $want, got $got" }
+            # The stamp must come from the archive's RELEASE-SOURCE (an archive has no git history).
+            if (-not (Select-String -Path (Join-Path $proj '.cursor/cursor-stack.stamp') -Pattern "^source_commit=$env:GITHUB_SHA$" -Quiet)) {
+              throw 'stamp did not come from RELEASE-SOURCE'
+            }
+            'installer-windows: archive route + RELEASE-SOURCE stamp OK'
+          }
+          finally { if ($srv -and -not $srv.HasExited) { Stop-Process -Id $srv.Id -Force } }

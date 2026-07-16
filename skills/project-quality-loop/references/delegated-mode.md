@@ -10,7 +10,7 @@ For the whole pipeline: DISCOVERY, every pass's SCORE line and open set, STOP de
 
 Every audit stage dispatches the matching domain verifier (aspnet-verifier / angular-verifier / ...). The code-quality stage instead has its verifier read `docs/architecture/ARCHITECTURE.md` and audit TARGET against it, so its findings cover both code quality AND architecture-conformance - code that violates the recorded structure (a cross-layer leak, a wrong-direction dependency, a rival pattern) is a finding.
 
-Every RUN dispatches the verifier at its **sonnet/xhigh pin** by default. An **opus/xhigh first-find** - escalating only the thorough first RUN of a stage to opus, re-verify RUNs staying on the pin - is an OPT-IN experiment, not the default: it may catch materially more real issues, but that is an unproven pin change, so per the repo's prove-don't-assert rule it stays OFF until a benchmark on a real target shows it pays, then it can be adopted. Do not silently ship it on.
+Every RUN dispatches the verifier, which inherits the session model - Cursor has no per-seat model or effort dial, so there is no per-RUN pin to set and no first-find escalation to reach for. The economy lever here is dispatch itself: the verifier's reads and its repeated audit output stay off the main session's context, which is what a delegated RUN buys - not a cheaper model.
 
 Gate stages (a transform naming a verifiable command) run the gate command in-session first and only dispatch on a red result - never dispatch an audit for a stage whose bar is a passing command.
 

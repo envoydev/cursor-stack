@@ -110,7 +110,8 @@ For a bug, incident, CI failure, flaky test, or unclear behavior, do not use the
 
 ```text
 Do not run full_cross_domain by default. Use single_chat for tiny tasks,
-implementer_only for small domain-local ones, domain_trio for medium.
+implementer_only for small AND medium domain-local work with no risk trigger,
+domain_trio only when a risk trigger fires (the decision ladder above).
 Use full_cross_domain only when cross-domain coordination risk justifies the cost.
 The full flow costs 2x-5x the tokens of a single chat - parallelism buys wall-clock
 and separation of concerns, not tokens.

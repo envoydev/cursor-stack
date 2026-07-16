@@ -186,7 +186,7 @@ if ($Scope -eq 'project') {
 
 # (1) Skills "repo|skill" (comment a line to skip). Full inventory - every skill (66).
 $Skills = @(
-  # Personal (envoydev/cursor-stack)
+  # House (envoydev/cursor-stack)
   'envoydev/cursor-stack|create-ticket'             # ticket generator (bug/story/epic/task) - tracker-agnostic EN Markdown, routes to references/<type>.md
   'envoydev/cursor-stack|dev-log-convert'           # UA/EN work notes -> structured English work log; trigger 'dev-log'
   'envoydev/cursor-stack|explain-code-tutor'        # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert

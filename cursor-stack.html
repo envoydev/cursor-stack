@@ -136,7 +136,7 @@
 
   <div class="counts">
     <div><strong id="c-total">92</strong> total</div>
-    <div><strong id="c-personal">37</strong> personal skills</div>
+    <div><strong id="c-house">37</strong> house skills</div>
     <div><strong id="c-repo">35</strong> repository skills</div>
     <div><strong id="c-mcp">7</strong> MCP servers</div>
     <div><strong id="c-hooks">9</strong> hooks / rules</div>
@@ -151,7 +151,7 @@
   <div id="content"></div>
 
   <footer>
-    Sources: <code>personal</code> &amp; <code>repository</code> skills installed via
+    Sources: <code>house</code> &amp; <code>repository</code> skills installed via
     the stack installer's git-clone + copy step (<code>scripts/cursor-stack.sh install skills-only</code>), run as Cursor Skills ·
     <code>MCP</code> servers written to <code>.cursor/mcp.json</code> ·
     <code>hooks</code> to <code>.cursor/hooks/</code> + <code>.cursor/hooks.json</code> ·
@@ -162,10 +162,10 @@
   </footer>
 
 <script>
-// ---- Personal skills (run as Cursor Skills) ----
-const personal = {
-  title: "Personal skills",
-  meta: "Personal convention skills, authored locally and published in this repo (envoydev/cursor-stack). Installed via the stack installer's git-clone + copy step, run as Cursor Skills.",
+// ---- House skills (run as Cursor Skills) ----
+const house = {
+  title: "House skills",
+  meta: "House convention skills, authored locally and published in this repo (envoydev/cursor-stack). Installed via the stack installer's git-clone + copy step, run as Cursor Skills.",
   source: "https://github.com/envoydev/cursor-stack",
   install: "scripts/cursor-stack.sh install skills-only",
   rows: [
@@ -347,8 +347,8 @@ function shortSource(url) {
   return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
 }
 
-function renderPersonal(filtered) {
-  let html = `<h2>${personal.title}</h2><div class="group-meta">${personal.meta} Install: <code>${personal.install}</code></div>`;
+function renderHouse(filtered) {
+  let html = `<h2>${house.title}</h2><div class="group-meta">${house.meta} Install: <code>${house.install}</code></div>`;
   html += `<table><thead><tr><th style="width:20%">Skill</th><th style="width:16%">Area</th><th>Description</th></tr></thead><tbody>`;
   for (const [name, area, desc] of filtered) {
     html += `<tr><td><span class="name">${name}</span></td><td><code>${area}</code></td><td class="desc">${desc}</td></tr>`;
@@ -367,7 +367,7 @@ function renderRepository(filtered) {
   const orderedUrls = Object.keys(multi).sort((a, b) => (multi[b].length - multi[a].length) || a.localeCompare(b));
   const repoInstall = () => "manual";  // no per-repo mechanism - the git-clone step only fetches STACK_SKILLS_REPO
 
-  let html = `<h2>Repository skills</h2><div class="group-meta">No automated install path beyond the pinned personal repo (git-clone fetches only STACK_SKILLS_REPO). ${filtered.length} skills. Plugin-marketplace skills are excluded - see the capability map.</div>`;
+  let html = `<h2>Repository skills</h2><div class="group-meta">No automated install path beyond the pinned house repo (the source snapshot carries only STACK_SOURCE_REPO). ${filtered.length} skills. Plugin-marketplace skills are excluded - see the capability map.</div>`;
   const tableFor = (rows) => {
     let t = `<table><thead><tr><th style="width:16%">Skill</th><th style="width:12%">Area</th><th style="width:24%">Install</th><th style="width:12%">Source</th><th>Description</th></tr></thead><tbody>`;
     for (const [name, area, u, desc] of rows.sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -443,27 +443,27 @@ function render(query) {
   root.innerHTML = "";
   const q = query;
 
-  const fPersonal = matchRow(personal.rows, q);
+  const fHouse = matchRow(house.rows, q);
   const fRepo     = matchRow(repository, q);
   const fMcp      = matchRow(mcp, q);
   const fHooks    = matchRow(hooksRules, q);
   const fAgents   = matchRow(agents, q);
   const fEquiv    = matchRow(equivalents, q);
 
-  if (fPersonal.length) root.insertAdjacentHTML("beforeend", renderPersonal(fPersonal));
+  if (fHouse.length) root.insertAdjacentHTML("beforeend", renderHouse(fHouse));
   if (fRepo.length)     root.insertAdjacentHTML("beforeend", renderRepository(fRepo));
   if (fMcp.length)      root.insertAdjacentHTML("beforeend", renderMcp(fMcp));
   if (fHooks.length)    root.insertAdjacentHTML("beforeend", renderHooks(fHooks));
   if (fAgents.length)   root.insertAdjacentHTML("beforeend", renderAgents(fAgents));
   if (fEquiv.length)    root.insertAdjacentHTML("beforeend", renderEquiv(fEquiv));
 
-  document.getElementById("c-personal").textContent = fPersonal.length;
+  document.getElementById("c-house").textContent = fHouse.length;
   document.getElementById("c-repo").textContent     = fRepo.length;
   document.getElementById("c-mcp").textContent      = fMcp.length;
   document.getElementById("c-hooks").textContent    = fHooks.length;
   document.getElementById("c-agents").textContent   = fAgents.length;
   document.getElementById("c-equiv").textContent    = fEquiv.length;
-  document.getElementById("c-total").textContent    = fPersonal.length + fRepo.length + fMcp.length + fHooks.length + fAgents.length;
+  document.getElementById("c-total").textContent    = fHouse.length + fRepo.length + fMcp.length + fHooks.length + fAgents.length;
 }
 
 document.getElementById("q").addEventListener("input", e => render(e.target.value.trim().toLowerCase()));

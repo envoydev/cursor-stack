@@ -12,7 +12,7 @@
 //      shells - a drift means a committed file never installs, or the
 //      installer fetches a file that no longer exists (they are fetched
 //      from THIS repo's main branch at install);
-//   4. cursor-stack.html agrees with the manifests: personal skill rows ==
+//   4. cursor-stack.html agrees with the manifests: house skill rows ==
 //      the active envoydev/cursor-stack entries, repository rows == the
 //      third-party + commented inventory, hooksRules rows == the hook +
 //      rule arrays, agent rows == CURSOR_AGENTS;
@@ -507,15 +507,15 @@ function main()
     // 7. cursor-stack.html agrees with the manifests.
     const html = fs.readFileSync(STACK_HTML, 'utf8');
 
-    // 7a. Personal rows == the active envoydev/cursor-stack entries (check 8
+    // 7a. House rows == the active envoydev/cursor-stack entries (check 8
     //     proves those same entries equal the on-disk skills/ dirs).
-    const htmlPersonal = new Set([...(html.split('const personal = {')[1] ?? '').split('};')[0]
+    const htmlHouse = new Set([...(html.split('const house = {')[1] ?? '').split('};')[0]
         .matchAll(/\["([a-z0-9-]+)","/g)].map(m => m[1]));
-    const personalManifest = new Set([...primary.active.keys()]
+    const houseManifest = new Set([...primary.active.keys()]
         .filter(s => primary.active.get(s) === 'envoydev/cursor-stack'));
-    assertSameSet('personal skill', {
-        'SKILLS manifest (envoydev/cursor-stack)': personalManifest,
-        'cursor-stack.html personal': htmlPersonal,
+    assertSameSet('house skill', {
+        'SKILLS manifest (envoydev/cursor-stack)': houseManifest,
+        'cursor-stack.html house': htmlHouse,
     });
 
     // 7b. Repository rows == the third-party + commented inventory.
@@ -569,7 +569,7 @@ function main()
         ? fs.readdirSync(SKILLS_DIR, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
         : []);
     assertSameSet('skill dir', {
-        'SKILLS manifest (envoydev/cursor-stack)': personalManifest,
+        'SKILLS manifest (envoydev/cursor-stack)': houseManifest,
         'skills/': skillDirs,
     });
 

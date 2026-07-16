@@ -1,8 +1,8 @@
-# CLAUDE.md - personal cursor-stack repo
+# CLAUDE.md - cursor-stack repo
 
 ## What this repo is
 
-The single source of truth for the **Cursor** half of a personal coding-agent setup - not an
+The single source of truth for the **Cursor** half of a coding-agent setup - not an
 application. It was split out of the Claude stack (`claude-stack`, still the peer repo, renamed
 from `agents-stack`), and is now **fully standalone**: this repo owns the whole Cursor delivery -
 the installers, the 66 vendored skills, the 33 Cursor-contract subagents, the `.mdc` rules, the
@@ -93,7 +93,7 @@ Invariants).
   gates every push to `develop` and `main` plus every PR into either - but note it cannot *block* a
   release: `release.yml` fires on the `main` push independently, so a red `main` publishes anyway.
   Branch protection on `main` (require the PR + green checks) is what would actually gate that.
-- **Public repo.** No private project names or absolute personal paths in any tracked file -
+- **Public repo.** No private project names or absolute local paths in any tracked file -
   generic 'consuming project' references only.
 - **Parity / source-of-truth.** Each `.sh`/`.ps1` twin matches its sibling; `npm run lint`
   enforces it (plus disk == manifest and the HTML). Never patch only a generated `.cursor/` tree

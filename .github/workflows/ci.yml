@@ -6,18 +6,20 @@ name: ci
 #                       skill frontmatter, reference resolution, the no-framing guard.
 #                       The lint is dependency-free by design, so there is no install step
 #                       and no lockfile question - node + `npm run lint` is the whole job.
-#   installer-linux   - the .sh actually RUNS.
-#   installer-windows - the .ps1 actually RUNS, on a native x86 PowerShell. This is the job
-#                       that matters most: the Windows twin cannot be executed on an Apple
-#                       Silicon dev box (no arm64 pwsh image; the amd64 one dies in .NET's
-#                       PAL under emulation), so before this workflow the twin was only ever
-#                       proven by reading it. A parse pass catches syntax on EVERY branch,
-#                       including the Windows-only paths a run never reaches; the run then
-#                       proves the install path end to end.
+#   installer-linux   - the .sh actually RUNS - skills-only, then a full install that asserts the
+#                       source clone serves the whole tree (one clone, zero per-file fetches) and
+#                       stamps the commit it came from.
+#   installer-windows - the .ps1 actually RUNS, on a native x86 PowerShell - the only place the
+#                       Windows-only branches (winget, WindowsApps) are real. A dev box can run
+#                       the twin under a native pwsh (homebrew ships an arm64 build; only the
+#                       amd64 *Docker image* is unusable on Apple Silicon, dying in .NET's PAL
+#                       under emulation), but that exercises the POSIX branches, not these. A
+#                       parse pass catches syntax on EVERY branch, including the ones no run
+#                       reaches; the run then proves the install path end to end.
 #
-# Both installer jobs drive `install skills-only`, which exists for exactly this and exits
-# before the prerequisite check. STACK_SKILLS_REPO points at the checkout, so the git-clone
-# step is offline and deterministic - it tests THIS commit's skills, not whatever is on main.
+# Both installer jobs drive `install skills-only` (which exits before the prerequisite check) and
+# then a full `install`. STACK_SOURCE_REPO / STACK_SKILLS_REPO point at the checkout, so the clone
+# is offline and deterministic - it tests THIS commit's artifacts, not whatever is on main.
 # Both twins resolve the target project with `git rev-parse --show-toplevel`, so the fixture
 # has to be a real git repo, not a bare directory.
 
@@ -59,6 +61,32 @@ jobs:
           test "$actual" = "$expected"
           test -f "$proj/.cursor/skills/create-ticket/SKILL.md"
           echo "installer-linux: install path OK"
+
+      - name: full install - one clone serves the whole tree, and stamps it
+        env:
+          STACK_SOURCE_REPO: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          proj="$RUNNER_TEMP/full"
+          mkdir -p "$proj" && cd "$proj"
+          git init -q . && git config user.email ci@example.com && git config user.name ci
+          bash "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" install 2>&1 | tee run.log
+
+          # The whole point of the source clone: ONE clone, and every hook/rule/agent copied out of
+          # it rather than fetched per-file. A regression here is silent, so assert the counts.
+          test "$(grep -c 'one clone per run' run.log)" = 1
+          test "$(grep -c 'fetched ->' run.log)" = 0
+          agents=$(ls "$proj/.cursor/agents"/*.md | wc -l | tr -d ' ')
+          rules=$(ls "$proj/.cursor/rules"/*.mdc | wc -l | tr -d ' ')
+          hooks=$(ls "$proj/.cursor/hooks"/*.js | wc -l | tr -d ' ')
+          echo "agents=$agents rules=$rules hooks=$hooks copied=$(grep -c 'copied ->' run.log)"
+          test "$agents" = "$(awk '/^CURSOR_AGENTS=\(/,/^\)/' "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
+          test "$rules"  = "$(awk '/^CURSOR_RULES=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
+          test "$hooks"  = "$(awk '/^CURSOR_HOOKS=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
+
+          # The stamp must name the commit actually installed - not a stale or invented one.
+          grep -q "^source_commit=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)$" "$proj/.cursor/cursor-stack.stamp"
+          echo "installer-linux: full tree + stamp OK"
 
   installer-windows:
     runs-on: windows-latest
@@ -102,3 +130,40 @@ jobs:
             throw 'create-ticket/SKILL.md missing'
           }
           'installer-windows: install path OK'
+
+      - name: full install - one clone serves the whole tree, and stamps it
+        shell: pwsh
+        env:
+          STACK_SOURCE_REPO: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $proj = Join-Path $env:RUNNER_TEMP 'full'
+          New-Item -ItemType Directory -Path $proj -Force | Out-Null
+          Set-Location $proj
+          git init -q .
+          git config user.email ci@example.com
+          git config user.name ci
+          & "$env:GITHUB_WORKSPACE/scripts/cursor-stack.ps1" install *>&1 | Tee-Object -FilePath run.log
+          if ($LASTEXITCODE -ne 0) { throw "installer exited $LASTEXITCODE" }
+
+          # The whole point of the source clone: ONE clone, and every hook/rule/agent copied out of
+          # it rather than fetched per-file. A regression here is silent, so assert the counts.
+          $log = Get-Content run.log -Raw
+          $clones = ([regex]::Matches($log, 'one clone per run')).Count
+          if ($clones -ne 1) { throw "expected 1 clone, got $clones" }
+          if ($log -match 'fetched ->') { throw 'a per-file fetch happened - the source clone was bypassed' }
+
+          # lint already gates disk == manifest, so the repo's own dirs are the contract here.
+          foreach ($kind in @(@('agents','*.md'), @('rules','*.mdc'), @('hooks','*.js'))) {
+            $want = (Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE $kind[0]) -Filter $kind[1]).Count
+            $got  = (Get-ChildItem -Path (Join-Path $proj ".cursor/$($kind[0])") -Filter $kind[1]).Count
+            "$($kind[0]): repo=$want installed=$got"
+            if ($want -ne $got) { throw "$($kind[0]): expected $want, got $got" }
+          }
+
+          # The stamp must name the commit actually installed - not a stale or invented one.
+          $head = (& git -C $env:GITHUB_WORKSPACE rev-parse HEAD).Trim()
+          if (-not (Select-String -Path (Join-Path $proj '.cursor/cursor-stack.stamp') -Pattern "^source_commit=$head$" -Quiet)) {
+            throw "stamp does not name HEAD ($head)"
+          }
+          'installer-windows: full tree + stamp OK'

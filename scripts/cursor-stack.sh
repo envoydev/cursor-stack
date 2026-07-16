@@ -29,7 +29,10 @@
 # active account instead):
 #   SCOPE=project  -> skills project-scoped; cursor tree -> <repo>/.cursor/  (default)
 #   SCOPE=global   -> skills -g;             cursor tree -> ~/.cursor/
-# STACK_SKILLS_REPO   skills source repo for git clone (default https://github.com/envoydev/cursor-stack)
+# STACK_SOURCE_REPO   source repo every artifact is copied from (default
+#                     https://github.com/envoydev/cursor-stack). STACK_SKILLS_REPO is honored as
+#                     the legacy alias - it named the skills source back when only skills came
+#                     from a clone and hooks/rules/agents were fetched per-file.
 # Full inventory - comment out manifest entries below to trim it to a curated subset.
 set -euo pipefail
 
@@ -296,19 +299,18 @@ MCPS=(
 )
 
 # (5) Cursor hooks "filename::event" + rules. These are CURSOR-contract scripts (.cursor/hooks.json
-# v1) fetched from this repo's hooks/. The portable Bash guards map over as hooks:
+# v1) copied out of the run's source clone (hooks/). The portable Bash guards map over as hooks:
 #   - guard-protected-force-push -> beforeShellExecution (reads {command}, returns {permission}).
 #   - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
 # Convention enforcement is NOT a hook - its home is a soft, glob-auto-attaching rule
 # (.cursor/rules/*.mdc, see CURSOR_RULES), never a pre-edit block.
-CURSOR_HOOK_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/hooks"
-CURSOR_RULES_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/rules"
 CURSOR_HOOKS=(
   "guard-protected-force-push.js::beforeShellExecution"
   "guard-catastrophic-rm.js::beforeShellExecution"
 )
-# A rule entry is "name" (fetched from CURSOR_RULES_BASE_URL) or "name|url" (fetched from that url -
-# the form for a third-party rule we would reference rather than vendor; currently unused).
+# A rule entry is "name" (copied from the source clone's rules/) or "name|url" (fetched from that
+# url - the form for a third-party rule we would reference rather than vendor; currently unused,
+# and the one entry shape that still touches the network).
 CURSOR_RULES=(
   # Always-on baseline set (alwaysApply, no globs) - the cross-cutting conventions; loaded every
   # turn like AGENTS.md, installer-refreshed.
@@ -327,7 +329,8 @@ CURSOR_RULES=(
   "ponytail.mdc"                              # ponytail 'lazy senior dev' minimal-code rule (alwaysApply) - vendored here
 )
 
-# (6) Subagents (cursor): Cursor-native specialist agents fetched into .cursor/agents/ on BOTH actions
+# (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's
+# source clone (agents/) on BOTH actions
 # (per-agent fail-soft - an agent not yet upstream keeps any existing local copy). Cursor auto-discovers
 # .cursor/agents/*.md; no settings wiring needed. All 33 subagents. Cursor (2.5+) has a Task tool and
 # subagents that inherit the parent's MCP servers, so the roster carries the FULL orchestration -
@@ -337,7 +340,6 @@ CURSOR_RULES=(
 # pinned per agent - they inherit the session model), no per-tool `tools:` allowlist (only `readonly`),
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
-CURSOR_AGENT_BASE_URL="https://raw.githubusercontent.com/envoydev/cursor-stack/main/agents"
 CURSOR_AGENTS=(
   # Build/test resolvers (readonly false - they edit to restore green)
   "dotnet-build-error-resolver.md"   # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped
@@ -384,31 +386,88 @@ CURSOR_AGENTS=(
 # INSTALL - skills re-add UNCONDITIONALLY (clean copy each run); the .cursor tree is refreshed
 # (mcp.json: install skips an already-present server / update re-writes it; hooks.json / rules skip if already wired)
 # ===========================================================================
+# ===========================================================================
+# SOURCE CLONE - the ONE revision every artifact in a run comes from
+# ===========================================================================
+# Every file this stack installs (skills, hooks, agents, rules) lives in this one repo, so a run
+# takes ONE shallow clone and copies out of it. That replaced the per-file
+# raw.githubusercontent.com fetches for hooks/rules/agents, for two reasons:
+#   - Correctness: raw.githubusercontent.com is CDN-cached (~5 min to propagate after a push), while
+#     the clone is not. A run that mixed the two could straddle a push and install skills from one
+#     revision and agents/rules/hooks from another - silently. One clone cannot.
+#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into the clone the run was
+#     already making for skills. The files were always in that clone; nothing fetched them from it.
+# Fail-soft is unchanged: a clone that fails leaves SOURCE_DIR empty, every per-file step keeps any
+# existing local copy, and STACK_SHA stays empty - which is what suppresses the stamp write, because
+# a wrong stamp is worse than none.
+SOURCE_DIR=""
+SOURCE_REPO_URL=""
+STACK_SHA=""
+SOURCE_FAILED=false
+
+ensure_source() {
+  [ -n "$SOURCE_DIR" ] && return 0                       # one clone per run - resolved already
+  [ "$SOURCE_FAILED" = true ] && return 1                # ... and one attempt: don't retry per artifact
+  command -v git >/dev/null 2>&1 || { log "  !! git not found - no source clone"; SOURCE_FAILED=true; return 1; }
+  local tmp
+  SOURCE_REPO_URL="${STACK_SOURCE_REPO:-${STACK_SKILLS_REPO:-https://github.com/envoydev/cursor-stack}}"
+  tmp="$(mktemp -d)"
+  log "source: cloning $SOURCE_REPO_URL (one clone per run - skills, hooks, rules, agents)"
+  if ! git clone --depth 1 "$SOURCE_REPO_URL" "$tmp" >/dev/null 2>&1; then
+    log "  !! clone of $SOURCE_REPO_URL failed - every artifact step keeps its existing copy"
+    rm -rf "$tmp"; SOURCE_FAILED=true; return 1
+  fi
+  SOURCE_DIR="$tmp"
+  STACK_SHA="$(git -C "$tmp" rev-parse HEAD 2>/dev/null || true)"
+  [ -n "$STACK_SHA" ] && log "source: $SOURCE_REPO_URL @ ${STACK_SHA:0:12}" \
+                      || log "source: $SOURCE_REPO_URL (no revision resolved - no stamp this run)"
+  return 0
+}
+cleanup_source() { [ -n "$SOURCE_DIR" ] && rm -rf "$SOURCE_DIR"; return 0; }
+trap cleanup_source EXIT
+
+# The install is versioned, not the file: Cursor has no per-artifact version field (SKILL.md is
+# name/description/paths/disable-model-invocation/metadata; an agent is name/description/model/
+# readonly/is_background), so a `version:` key would parse nowhere. Instead one stamp names the
+# commit every artifact in this run was copied from - exact for all 112, nothing to hand-bump.
+write_stamp() {
+  # No revision -> no stamp. A stamp that names the wrong commit is worse than none, so leave any
+  # previous stamp untouched rather than overwrite it with a guess.
+  [ -n "$STACK_SHA" ] || { log "  stamp: skipped - no source revision resolved this run"; return 0; }
+  local dir dest
+  # $PWD for project scope, matching install_skills' dest: the stamp belongs beside the tree it describes.
+  case "$SCOPE" in project) dir="$PWD/.cursor" ;; *) dir="$CONFIG_DIR" ;; esac
+  mkdir -p "$dir"; dest="$dir/cursor-stack.stamp"
+  cat > "$dest" <<STAMP
+# cursor-stack install stamp - machine-local, written by cursor-stack.sh / cursor-stack.ps1.
+# Names the source commit every artifact in this tree was copied from. Do not hand-edit.
+source_repo=$SOURCE_REPO_URL
+source_commit=$STACK_SHA
+scope=$SCOPE
+action=$ACTION
+STAMP
+  log "  stamp -> $dest (${STACK_SHA:0:12})"
+}
+
 install_skills() {
   # git-copy: clone the stack repo (depth 1) and copy each selected skills/<name>/ straight into
   # .cursor/skills - all 65 house skills live in THIS repo (envoydev/cursor-stack), so a plain copy
   # fully reproduces what the skills CLI used to stage. STRICT independence preserved: the dest is
   # .cursor/skills as real copies, never a dependency on a shared .agents/ store
   # (no separate npx-then-copy step needed any more - this writes .cursor/skills directly).
-  command -v git >/dev/null 2>&1 || { log "  !! git not found - skills not installed"; return 0; }   # fail-soft: skip, never abort
-  local repo_url tmp name dest entry
-  repo_url="${STACK_SKILLS_REPO:-https://github.com/envoydev/cursor-stack}"
+  ensure_source || { log "  !! no source clone - skills not installed"; return 0; }   # fail-soft: skip, never abort
+  local name dest entry
   case "$SCOPE" in project) dest="$PWD/.cursor/skills" ;; *) dest="$CONFIG_DIR/skills" ;; esac
-  tmp="$(mktemp -d)"
-  if ! git clone --depth 1 "$repo_url" "$tmp" >/dev/null 2>&1; then
-    log "  !! clone of $repo_url failed - skills not installed"; rm -rf "$tmp"; return 0
-  fi
   mkdir -p "$dest"
   for entry in "${SKILLS[@]}"; do
     name="${entry#*|}"
-    if [ -d "$tmp/skills/$name" ]; then
-      rm -rf "$dest/$name"; cp -R "$tmp/skills/$name" "$dest/$name"
+    if [ -d "$SOURCE_DIR/skills/$name" ]; then
+      rm -rf "$dest/$name"; cp -R "$SOURCE_DIR/skills/$name" "$dest/$name"
       log "skill [$SCOPE]: $name -> $dest/$name"
     else
-      log "  !! skill '$name' not found in $repo_url"
+      log "  !! skill '$name' not found in $SOURCE_REPO_URL"
     fi
   done
-  rm -rf "$tmp"
 }
 
 set_cursor_mcps() {
@@ -509,8 +568,8 @@ set_cursor_hooks() {
   # Fetch the CURSOR-contract hook scripts into .cursor/hooks/ and wire .cursor/hooks.json (schema v1).
   # Fetched from this repo's hooks/ (Cursor's beforeShellExecution etc. contract). Per-hook
   # fail-soft: a hook not yet upstream keeps any existing local copy.
-  command -v curl >/dev/null || { log "  !! curl not found - skipping cursor hooks"; return 0; }
-  local root hooks_json hooks_dir ref_prefix node_exe entry file event cmd tmp pairs=()
+  ensure_source || log "  !! no source clone - each hook keeps any existing copy"
+  local root hooks_json hooks_dir ref_prefix node_exe entry file event cmd src pairs=()
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ "$SCOPE" = "project" ]; then
     [ -n "$root" ] || { log "  !! not in a git repo - skipping cursor hooks"; return 0; }
@@ -526,16 +585,15 @@ set_cursor_hooks() {
   for entry in "${CURSOR_HOOKS[@]}"; do
     file="${entry%%::*}"; event="${entry##*::}"
     [ -n "$event" ] || continue
-    tmp="$(mktemp)"
-    if curl -fsSL "$CURSOR_HOOK_BASE_URL/$file" -o "$tmp"; then
-      # Content-compare-then-skip: only overwrite when the
-      # fetched bytes differ, so an unchanged hook is left untouched (stable mtime, no noisy log).
-      if [ -f "$hooks_dir/$file" ] && cmp -s "$tmp" "$hooks_dir/$file"; then rm -f "$tmp"; log "  cursor hook current: $file"
-      else mv "$tmp" "$hooks_dir/$file"; chmod +x "$hooks_dir/$file"; log "  cursor hook fetched -> $file"; fi
+    src="$SOURCE_DIR/hooks/$file"
+    if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then
+      # Content-compare-then-skip: only overwrite when the source bytes
+      # differ, so an unchanged hook is left untouched (stable mtime, no noisy log).
+      if [ -f "$hooks_dir/$file" ] && cmp -s "$src" "$hooks_dir/$file"; then log "  cursor hook current: $file"
+      else cp "$src" "$hooks_dir/$file"; chmod +x "$hooks_dir/$file"; log "  cursor hook copied -> $file"; fi
     else
-      rm -f "$tmp"
-      [ -f "$hooks_dir/$file" ] || { log "  !! fetch failed and no local copy: $file - skipping"; continue; }
-      log "  !! fetch failed (kept existing copy): $file"
+      [ -f "$hooks_dir/$file" ] || { log "  !! not in source and no local copy: $file - skipping"; continue; }
+      log "  !! not in source (kept existing copy): $file"
     fi
     cmd="\"$node_exe\" \"$ref_prefix$file\""
     pairs+=("$event|$cmd")
@@ -573,8 +631,8 @@ PY
 install_cursor_rules() {
   # Fetch .cursor/rules/*.mdc (soft convention guidance, auto-attached by glob) - e.g. the C# gate analog.
   # Per-rule fail-soft: a rule not yet upstream keeps any existing local copy.
-  command -v curl >/dev/null || { log "  !! curl not found - skipping cursor rules"; return 0; }
-  local root rules_dir entry file url tmp
+  ensure_source || log "  !! no source clone - each rule keeps any existing copy"
+  local root rules_dir entry file url tmp src
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ "$SCOPE" = "project" ]; then
     [ -n "$root" ] || { log "  !! not in a git repo - skipping cursor rules"; return 0; }
@@ -584,15 +642,24 @@ install_cursor_rules() {
   fi
   mkdir -p "$rules_dir"
   for entry in ${CURSOR_RULES[@]+"${CURSOR_RULES[@]}"}; do
-    file="${entry%%|*}"                              # "name" -> repo base; "name|url" -> that url
-    [ "$entry" = "$file" ] && url="$CURSOR_RULES_BASE_URL/$file" || url="${entry#*|}"
-    tmp="$(mktemp)"
-    if curl -fsSL "$url" -o "$tmp"; then
-      mv "$tmp" "$rules_dir/$file"; log "  cursor rule fetched -> $file"
+    file="${entry%%|*}"                              # "name" -> the source clone; "name|url" -> that url
+    if [ "$entry" != "$file" ]; then                 # third-party rule: the one shape still fetched
+      url="${entry#*|}"; tmp="$(mktemp)"
+      if command -v curl >/dev/null && curl -fsSL "$url" -o "$tmp"; then
+        mv "$tmp" "$rules_dir/$file"; log "  cursor rule fetched -> $file"
+      else
+        rm -f "$tmp"
+        [ -f "$rules_dir/$file" ] || { log "  !! fetch failed and no local copy: $file - skipping"; continue; }
+        log "  !! fetch failed (kept existing copy): $file"
+      fi
+      continue
+    fi
+    src="$SOURCE_DIR/rules/$file"
+    if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then
+      cp "$src" "$rules_dir/$file"; log "  cursor rule copied -> $file"
     else
-      rm -f "$tmp"
-      [ -f "$rules_dir/$file" ] || { log "  !! fetch failed and no local copy: $file - skipping"; continue; }
-      log "  !! fetch failed (kept existing copy): $file"
+      [ -f "$rules_dir/$file" ] || { log "  !! not in source and no local copy: $file - skipping"; continue; }
+      log "  !! not in source (kept existing copy): $file"
     fi
   done
 }
@@ -602,8 +669,8 @@ install_cursor_agents() {
   # Content-compare-then-skip + per-agent fail-soft (a fetch
   # failure keeps any existing local copy). Scope follows SCOPE like the rules/skills: repo root for
   # project, $HOME for global.
-  command -v curl >/dev/null || { log "  !! curl not found - skipping cursor agents"; return 0; }
-  local root agents_dir file tmp
+  ensure_source || log "  !! no source clone - each agent keeps any existing copy"
+  local root agents_dir file src
   root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [ "$SCOPE" = "project" ]; then
     [ -n "$root" ] || { log "  !! not in a git repo - skipping cursor agents"; return 0; }
@@ -613,14 +680,13 @@ install_cursor_agents() {
   fi
   mkdir -p "$agents_dir"
   for file in ${CURSOR_AGENTS[@]+"${CURSOR_AGENTS[@]}"}; do
-    tmp="$(mktemp)"
-    if curl -fsSL "$CURSOR_AGENT_BASE_URL/$file" -o "$tmp"; then
-      if [ -f "$agents_dir/$file" ] && cmp -s "$tmp" "$agents_dir/$file"; then rm -f "$tmp"; log "  cursor agent current: $file"
-      else mv "$tmp" "$agents_dir/$file"; log "  cursor agent fetched -> $file"; fi
+    src="$SOURCE_DIR/agents/$file"
+    if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then
+      if [ -f "$agents_dir/$file" ] && cmp -s "$src" "$agents_dir/$file"; then log "  cursor agent current: $file"
+      else cp "$src" "$agents_dir/$file"; log "  cursor agent copied -> $file"; fi
     else
-      rm -f "$tmp"
-      [ -f "$agents_dir/$file" ] || { log "  !! fetch failed and no local copy: $file - skipping"; continue; }
-      log "  !! fetch failed (kept existing copy): $file"
+      [ -f "$agents_dir/$file" ] || { log "  !! not in source and no local copy: $file - skipping"; continue; }
+      log "  !! not in source (kept existing copy): $file"
     fi
   done
 }
@@ -678,6 +744,8 @@ prune_agents_cache() {
 # skills-only: run ONLY the skill step and exit, before any prerequisite check (testability -
 # drives just the git-copy with no gh/other-tool dependency).
 if [ "$SKILLS_ONLY" = true ]; then
+  # No stamp here on purpose: this mode lands ONLY skills, so a stamp claiming the whole tree came
+  # from this revision would be a lie - and a wrong stamp is worse than none.
   if [ "$ACTION" = "install" ]; then install_skills; else update_skills; fi
   exit 0
 fi
@@ -691,6 +759,7 @@ set_cursor_mcps
 set_cursor_hooks
 install_cursor_rules
 install_cursor_agents
+write_stamp
 log "plugins: Cursor plugins install from Cursor chat, not this script. Run '/add-plugin superpowers' in Cursor to add the superpowers workflow skills + hooks. Everything else is a Cursor native (Bugbot, AGENTS.md, Open-VSX LSP extensions); their skill / mcp / hook components are already provisioned here (+ .cursor/rules)."
 
 prune_agents_cache
@@ -701,7 +770,7 @@ cat <<'GITIGNORE'
 
 Add these stack-generated, machine-local artifacts to the project's .gitignore (or .git/info/exclude):
   .serena          serena per-project state: registry, cache, language servers (SERENA_HOME=.serena/home)
-  .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules
+  .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules + install stamp
   .slopwatch       dotnet-slopwatch output
   .playwright      playwright MCP user-data-dir + screenshots
 GITIGNORE

@@ -42,11 +42,15 @@ Invariants).
 
 ## The ownership model - everything is owned here
 
-- **Owned here:** everything - skills, agents, rules, hooks, template, installers, HTML. The
-  skills are vendored under `skills/` and copied in by cloning THIS repo
-  (`STACK_SKILLS_REPO` overrides the source); agents/rules/hooks are fetched from THIS repo's
-  `main` (`raw.githubusercontent.com/envoydev/cursor-stack/main/...`), so a change ships only
-  once committed + pushed; until then the per-file fail-soft keeps any existing copy.
+- **Owned here:** everything - skills, agents, rules, hooks, template, installers, HTML. Every
+  artifact is copied out of ONE depth-1 clone of THIS repo per run (`STACK_SOURCE_REPO` overrides
+  the source; `STACK_SKILLS_REPO` is the legacy alias), so a change ships only once committed +
+  pushed; until then the per-file fail-soft keeps any existing copy. One clone, not a clone plus
+  ~47 per-file `raw.githubusercontent.com` fetches: raw is CDN-cached (~5 min after a push) and
+  the clone is not, so the old split could straddle a push and install skills from one revision
+  and agents/rules/hooks from another. Each run stamps `.cursor/cursor-stack.stamp` with the
+  source commit - Cursor has no per-artifact `version:` field, so the INSTALL is what gets
+  versioned. A run that resolves no revision writes no stamp: a wrong stamp is worse than none.
 - **The peer repo (`claude-stack`) is a SIBLING, not an upstream.** The two stacks were forked
   from one source and still share skill *content* and the `MCPS` baseline by descent, so a
   baseline improvement is usually worth porting BOTH ways - but nothing here reads from there at
@@ -86,8 +90,9 @@ Invariants).
 
 - The installer regenerates `.cursor/mcp.json` / `hooks.json` / rules on every run - fix the
   source here, not the output in a consuming project.
-- Hooks, rules, and agents are fetched from GitHub at install - a change ships only once
-  committed + pushed to `main`.
+- Hooks, rules, and agents are copied from the run's source clone of `main` - a change ships only
+  once committed + pushed. Check `.cursor/cursor-stack.stamp` in a consuming project to see which
+  commit its tree actually came from.
 - The skills and agents share ancestry with the peer repo's, so a protocol fix there is often
   worth porting here (and vice versa) - but nothing enforces it and divergence is not a defect.
   Port on merit, not on principle; never copy the peer's framing along with the fix.

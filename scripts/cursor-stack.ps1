@@ -26,7 +26,8 @@
     project -> skills project-scoped, cursor tree -> <repo>/.cursor/
     global  -> skills -g, cursor tree -> ~/.cursor/
 
-  Skills install by a depth-1 git clone of $env:STACK_SKILLS_REPO (default
+  Every artifact installs by ONE depth-1 git clone of $env:STACK_SOURCE_REPO
+  ($env:STACK_SKILLS_REPO is honored as the legacy alias) (default
   https://github.com/envoydev/cursor-stack), copied straight into .cursor/skills - no npx/skills-CLI
   dependency. -SkillsOnly runs only that step, then exits (testability).
 
@@ -336,13 +337,11 @@ $Mcps = @(
 )
 
 # (5) Cursor hooks "filename::event" + rules. These are CURSOR-contract scripts (.cursor/hooks.json
-#     v1) fetched from this repo's hooks/. The portable Bash guards map over as hooks:
+#     v1) copied out of the run's source clone (hooks/). The portable Bash guards map over as hooks:
 #       - guard-protected-force-push -> beforeShellExecution (reads {command}, returns {permission}).
 #       - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
 #     Conventions are NOT a hook in either stack: they ship as soft, path-scoped rules (Cursor:
 #     .cursor/rules/*.mdc, auto-attaches by glob - guidance, never a block) - see $CursorRules.
-$CursorHookBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/hooks'
-$CursorRulesBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/rules'
 $CursorHooks = @(
   'guard-protected-force-push.js::beforeShellExecution'
   'guard-catastrophic-rm.js::beforeShellExecution'
@@ -367,7 +366,8 @@ $CursorRules = @(
   'ponytail.mdc'                              # ponytail minimal-code rule (alwaysApply) - vendored here
 )
 
-# (6) Subagents (cursor): Cursor-native specialist agents fetched into .cursor/agents/ on BOTH actions
+# (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's
+# source clone (agents/) on BOTH actions
 # (per-agent fail-soft - an agent not yet upstream keeps any existing local copy). Cursor auto-discovers
 # .cursor/agents/*.md; no settings wiring needed. All 33 subagents. Cursor (2.5+) has a Task tool and
 # subagents that inherit the parent's MCP servers, so the roster carries the FULL orchestration -
@@ -377,7 +377,6 @@ $CursorRules = @(
 # pinned per agent - they inherit the session model), no per-tool 'tools:' allowlist (only 'readonly'),
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
-$CursorAgentBaseUrl = 'https://raw.githubusercontent.com/envoydev/cursor-stack/main/agents'
 $CursorAgents = @(
   # Build/test resolvers (readonly false - they edit to restore green)
   'dotnet-build-error-resolver.md'   # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped
@@ -436,37 +435,100 @@ function Get-CursorSkillsDest {
   return (Join-Path $ConfigDir 'skills')
 }
 
+# ===========================================================================
+# SOURCE CLONE - the ONE revision every artifact in a run comes from
+# ===========================================================================
+# Every file this stack installs (skills, hooks, agents, rules) lives in this one repo, so a run
+# takes ONE shallow clone and copies out of it. That replaced the per-file
+# raw.githubusercontent.com fetches for hooks/rules/agents, for two reasons:
+#   - Correctness: raw.githubusercontent.com is CDN-cached (~5 min to propagate after a push), while
+#     the clone is not. A run that mixed the two could straddle a push and install skills from one
+#     revision and agents/rules/hooks from another - silently. One clone cannot.
+#   - Cost: it collapses ~47 round trips (2 hooks + 12 rules + 33 agents) into the clone the run was
+#     already making for skills. The files were always in that clone; nothing fetched them from it.
+# Fail-soft is unchanged: a clone that fails leaves $SourceDir empty, every per-file step keeps any
+# existing local copy, and $StackSha stays empty - which is what suppresses the stamp write, because
+# a wrong stamp is worse than none.
+$script:SourceDir = ''
+$script:SourceRepoUrl = ''
+$script:StackSha = ''
+$script:SourceFailed = $false
+
+function Initialize-Source {
+  if ($script:SourceDir) { return $true }                  # one clone per run - resolved already
+  if ($script:SourceFailed) { return $false }              # ... and one attempt: don't retry per artifact
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Log '  !! git not found - no source clone'; $script:SourceFailed = $true; return $false
+  }
+  $script:SourceRepoUrl = if ($env:STACK_SOURCE_REPO) { $env:STACK_SOURCE_REPO }
+                          elseif ($env:STACK_SKILLS_REPO) { $env:STACK_SKILLS_REPO }
+                          else { 'https://github.com/envoydev/cursor-stack' }
+  $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+  New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+  Log "source: cloning $($script:SourceRepoUrl) (one clone per run - skills, hooks, rules, agents)"
+  & git clone --depth 1 $script:SourceRepoUrl $tmp *> $null
+  if ($LASTEXITCODE -ne 0) {
+    Log "  !! clone of $($script:SourceRepoUrl) failed - every artifact step keeps its existing copy"
+    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    $script:SourceFailed = $true; return $false
+  }
+  $script:SourceDir = $tmp
+  $sha = (& git -C $tmp rev-parse HEAD 2>$null)
+  $script:StackSha = if ($LASTEXITCODE -eq 0 -and $sha) { "$sha".Trim() } else { '' }
+  if ($script:StackSha) { Log "source: $($script:SourceRepoUrl) @ $($script:StackSha.Substring(0,12))" }
+  else { Log "source: $($script:SourceRepoUrl) (no revision resolved - no stamp this run)" }
+  return $true
+}
+
+function Remove-Source {
+  if ($script:SourceDir) { Remove-Item -LiteralPath $script:SourceDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# The install is versioned, not the file: Cursor has no per-artifact version field (SKILL.md is
+# name/description/paths/disable-model-invocation/metadata; an agent is name/description/model/
+# readonly/is_background), so a `version:` key would parse nowhere. Instead one stamp names the
+# commit every artifact in this run was copied from - exact for all 112, nothing to hand-bump.
+function Write-Stamp {
+  # No revision -> no stamp. A stamp that names the wrong commit is worse than none, so leave any
+  # previous stamp untouched rather than overwrite it with a guess.
+  if (-not $script:StackSha) { Log '  stamp: skipped - no source revision resolved this run'; return }
+  # (Get-Location) for project scope, matching Get-CursorSkillsDest: the stamp belongs beside the tree it describes.
+  $dir = if ($Scope -eq 'project') { Join-Path (Get-Location).Path '.cursor' } else { $ConfigDir }
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  $dest = Join-Path $dir 'cursor-stack.stamp'
+  $body = @(
+    '# cursor-stack install stamp - machine-local, written by cursor-stack.sh / cursor-stack.ps1.'
+    '# Names the source commit every artifact in this tree was copied from. Do not hand-edit.'
+    "source_repo=$($script:SourceRepoUrl)"
+    "source_commit=$($script:StackSha)"
+    "scope=$Scope"
+    "action=$Action"
+  ) -join "`n"
+  Set-Content -LiteralPath $dest -Value ($body + "`n") -NoNewline -Encoding utf8
+  Log "  stamp -> $dest ($($script:StackSha.Substring(0,12)))"
+}
+
 function Install-Skills {
   # git-copy: clone the stack repo (depth 1) and copy each selected skills/<name>/ straight into
   # .cursor/skills - all house skills live in THIS repo (envoydev/cursor-stack), so a plain copy fully
   # reproduces what the skills CLI used to stage. STRICT independence preserved: the dest is
   # .cursor/skills as real copies, never a dependency on a shared .agents/ store
   # (no separate npx-then-copy step needed any more - this writes .cursor/skills directly).
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Log '  !! git not found - skills not installed'; return }   # fail-soft: skip, never abort
-  $repoUrl = if ($env:STACK_SKILLS_REPO) { $env:STACK_SKILLS_REPO } else { 'https://github.com/envoydev/cursor-stack' }
+  if (-not (Initialize-Source)) { Log '  !! no source clone - skills not installed'; return }   # fail-soft: skip, never abort
   $dest = Get-CursorSkillsDest
-  $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
-  New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-  try {
-    & git clone --depth 1 $repoUrl $tmp *> $null
-    if ($LASTEXITCODE -ne 0) { Log "  !! clone of $repoUrl failed - skills not installed"; return }
-    New-Item -ItemType Directory -Path $dest -Force | Out-Null
-    foreach ($entry in $Skills) {
-      $name = $entry.Split('|', 2)[1]
-      $src = Join-Path $tmp "skills\$name"
-      if (Test-Path -LiteralPath $src -PathType Container) {
-        $target = Join-Path $dest $name
-        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-        Copy-Item -LiteralPath $src -Destination $target -Recurse -Force
-        Log "skill [$Scope]: $name -> $target"
-      }
-      else {
-        Log "  !! skill '$name' not found in $repoUrl"
-      }
+  New-Item -ItemType Directory -Path $dest -Force | Out-Null
+  foreach ($entry in $Skills) {
+    $name = $entry.Split('|', 2)[1]
+    $src = Join-Path $script:SourceDir "skills\$name"
+    if (Test-Path -LiteralPath $src -PathType Container) {
+      $target = Join-Path $dest $name
+      if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+      Copy-Item -LiteralPath $src -Destination $target -Recurse -Force
+      Log "skill [$Scope]: $name -> $target"
     }
-  }
-  finally {
-    Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    else {
+      Log "  !! skill '$name' not found in $($script:SourceRepoUrl)"
+    }
   }
 }
 
@@ -557,9 +619,10 @@ function Set-CursorMcps {
 }
 
 function Set-CursorHooks {
-  # Fetch the CURSOR-contract hook scripts into .cursor/hooks/ and wire .cursor/hooks.json (schema v1).
-  # Fetched from this repo's hooks/ (Cursor's beforeShellExecution etc. contract). Per-hook
-  # fail-soft: a hook not yet upstream keeps any local copy.
+  # Copy the CURSOR-contract hook scripts into .cursor/hooks/ and wire .cursor/hooks.json (schema v1).
+  # Copied from the run's source clone (Cursor's beforeShellExecution etc. contract). Per-hook
+  # fail-soft: a hook not in the source keeps any local copy.
+  if (-not (Initialize-Source)) { Log '  !! no source clone - each hook keeps any existing copy' }
   $root = Get-RepoRoot
   if ($Scope -eq 'project') {
     if (-not $root) { Log '  !! not in a git repo - skipping cursor hooks'; return }
@@ -589,22 +652,18 @@ function Set-CursorHooks {
     $event = $p[1]
     if (-not $event) { continue }
     $dest = Join-Path $hooksDir $file
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try { Invoke-WebRequest -Uri "$CursorHookBaseUrl/$file" -OutFile $tmp -UseBasicParsing -ErrorAction Stop }
-    catch {
-      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! fetch failed and no local copy: $file - skipping"; continue }
-      Log "  !! fetch failed (kept existing copy): $file"
+    $src = if ($script:SourceDir) { Join-Path $script:SourceDir "hooks\$file" } else { $null }
+    if (-not ($src -and (Test-Path -LiteralPath $src))) {
+      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! not in source and no local copy: $file - skipping"; continue }
+      Log "  !! not in source (kept existing copy): $file"
     }
-    # Hash-compare-then-skip: only overwrite when the fetched
+    # Hash-compare-then-skip: only overwrite when the source
     # bytes differ, so an unchanged hook is left untouched (stable mtime, no noisy log).
-    if (Test-Path -LiteralPath $tmp) {
-      if ((Test-Path -LiteralPath $dest) -and ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $dest).Hash)) {
-        Remove-Item -LiteralPath $tmp -Force; Log "  cursor hook current: $file"
-      }
-      else {
-        Move-Item -LiteralPath $tmp -Destination $dest -Force; Log "  cursor hook fetched -> $file"
-      }
+    elseif ((Test-Path -LiteralPath $dest) -and ((Get-FileHash -LiteralPath $src).Hash -eq (Get-FileHash -LiteralPath $dest).Hash)) {
+      Log "  cursor hook current: $file"
+    }
+    else {
+      Copy-Item -LiteralPath $src -Destination $dest -Force; Log "  cursor hook copied -> $file"
     }
 
     if (-not $data.hooks.PSObject.Properties[$event]) { $data.hooks | Add-Member -NotePropertyName $event -NotePropertyValue @() }
@@ -626,8 +685,9 @@ function Set-CursorHooks {
 }
 
 function Install-CursorRules {
-  # Fetch .cursor/rules/*.mdc (soft convention guidance, auto-attached by glob) - e.g. the C# gate analog.
-  # Per-rule fail-soft: a rule not yet upstream keeps any existing local copy.
+  # Copy .cursor/rules/*.mdc (soft convention guidance, auto-attached by glob) out of the source clone.
+  # Per-rule fail-soft: a rule not in the source keeps any existing local copy.
+  if (-not (Initialize-Source)) { Log '  !! no source clone - each rule keeps any existing copy' }
   $root = Get-RepoRoot
   if ($Scope -eq 'project') {
     if (-not $root) { Log '  !! not in a git repo - skipping cursor rules'; return }
@@ -638,26 +698,34 @@ function Install-CursorRules {
   }
   if (-not (Test-Path -LiteralPath $rulesDir)) { New-Item -ItemType Directory -Path $rulesDir -Force | Out-Null }
   foreach ($entry in $CursorRules) {
-    $parts = $entry.Split('|', 2)                    # 'name' -> repo base; 'name|url' -> that url
+    $parts = $entry.Split('|', 2)                    # 'name' -> the source clone; 'name|url' -> that url
     $file = $parts[0]
-    $url = if ($parts.Count -gt 1) { $parts[1] } else { "$CursorRulesBaseUrl/$file" }
     $dest = Join-Path $rulesDir $file
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try { Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -ErrorAction Stop }
-    catch {
-      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! fetch failed and no local copy: $file - skipping"; continue }
-      Log "  !! fetch failed (kept existing copy): $file"; continue
+    if ($parts.Count -gt 1) {                        # third-party rule: the one shape still fetched
+      $tmp = [System.IO.Path]::GetTempFileName()
+      try { Invoke-WebRequest -Uri $parts[1] -OutFile $tmp -UseBasicParsing -ErrorAction Stop }
+      catch {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $dest)) { Log "  !! fetch failed and no local copy: $file - skipping"; continue }
+        Log "  !! fetch failed (kept existing copy): $file"; continue
+      }
+      Move-Item -LiteralPath $tmp -Destination $dest -Force; Log "  cursor rule fetched -> $file"; continue
     }
-    Move-Item -LiteralPath $tmp -Destination $dest -Force; Log "  cursor rule fetched -> $file"
+    $src = if ($script:SourceDir) { Join-Path $script:SourceDir "rules\$file" } else { $null }
+    if (-not ($src -and (Test-Path -LiteralPath $src))) {
+      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! not in source and no local copy: $file - skipping"; continue }
+      Log "  !! not in source (kept existing copy): $file"; continue
+    }
+    Copy-Item -LiteralPath $src -Destination $dest -Force; Log "  cursor rule copied -> $file"
   }
 }
 
 function Install-CursorAgents {
-  # Fetch each Cursor subagent .md into .cursor/agents/ (Cursor auto-discovers them - no settings wiring).
-  # Hash-compare-then-skip + per-agent fail-soft (a fetch failure
-  # keeps any existing local copy). Scope follows $Scope like the rules/skills: repo root for project,
-  # $HOME for global.
+  # Copy each Cursor subagent .md into .cursor/agents/ (Cursor auto-discovers them - no settings wiring).
+  # Hash-compare-then-skip + per-agent fail-soft (an agent not in
+  # the source keeps any existing local copy). Scope follows $Scope like the rules/skills: repo root for
+  # project, $HOME for global.
+  if (-not (Initialize-Source)) { Log '  !! no source clone - each agent keeps any existing copy' }
   $root = Get-RepoRoot
   if ($Scope -eq 'project') {
     if (-not $root) { Log '  !! not in a git repo - skipping cursor agents'; return }
@@ -669,18 +737,16 @@ function Install-CursorAgents {
   if (-not (Test-Path -LiteralPath $agentsDir)) { New-Item -ItemType Directory -Path $agentsDir -Force | Out-Null }
   foreach ($file in $CursorAgents) {
     $dest = Join-Path $agentsDir $file
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try { Invoke-WebRequest -Uri "$CursorAgentBaseUrl/$file" -OutFile $tmp -UseBasicParsing -ErrorAction Stop }
-    catch {
-      Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! fetch failed and no local copy: $file - skipping"; continue }
-      Log "  !! fetch failed (kept existing copy): $file"; continue
+    $src = if ($script:SourceDir) { Join-Path $script:SourceDir "agents\$file" } else { $null }
+    if (-not ($src -and (Test-Path -LiteralPath $src))) {
+      if (-not (Test-Path -LiteralPath $dest)) { Log "  !! not in source and no local copy: $file - skipping"; continue }
+      Log "  !! not in source (kept existing copy): $file"; continue
     }
-    if ((Test-Path -LiteralPath $dest) -and ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $dest).Hash)) {
-      Remove-Item -LiteralPath $tmp -Force; Log "  cursor agent current: $file"
+    if ((Test-Path -LiteralPath $dest) -and ((Get-FileHash -LiteralPath $src).Hash -eq (Get-FileHash -LiteralPath $dest).Hash)) {
+      Log "  cursor agent current: $file"
     }
     else {
-      Move-Item -LiteralPath $tmp -Destination $dest -Force; Log "  cursor agent fetched -> $file"
+      Copy-Item -LiteralPath $src -Destination $dest -Force; Log "  cursor agent copied -> $file"
     }
   }
 }
@@ -738,19 +804,27 @@ function Remove-AgentsCache {
 # -SkillsOnly: run ONLY the skill step and exit, before any prerequisite check (testability -
 # drives just the git-copy with no gh/other-tool dependency).
 if ($SkillsOnly) {
-  if ($Action -eq 'install') { Install-Skills } else { Update-Skills }
+  # No stamp here on purpose: this mode lands ONLY skills, so a stamp claiming the whole tree came
+  # from this revision would be a lie - and a wrong stamp is worse than none.
+  try { if ($Action -eq 'install') { Install-Skills } else { Update-Skills } } finally { Remove-Source }
   exit 0
 }
 
 Test-Prerequisites
 Install-GitHubCli
 
-# install == update (clean re-add of skills, then refresh the .cursor tree).
-if ($Action -eq 'install') { Install-Skills } else { Update-Skills }
-Set-CursorMcps
-Set-CursorHooks
-Install-CursorRules
-Install-CursorAgents
+# install == update (clean re-add of skills, then refresh the .cursor tree). The finally mirrors the
+# .sh twin's `trap cleanup_source EXIT`: ErrorActionPreference is 'Stop', so any throw in here would
+# otherwise leak the source clone in TEMP.
+try {
+  if ($Action -eq 'install') { Install-Skills } else { Update-Skills }
+  Set-CursorMcps
+  Set-CursorHooks
+  Install-CursorRules
+  Install-CursorAgents
+  Write-Stamp
+}
+finally { Remove-Source }
 Log "plugins: Cursor plugins install from Cursor chat, not this script. Run '/add-plugin superpowers' in Cursor to add the superpowers workflow skills + hooks. Everything else is a Cursor native (Bugbot, AGENTS.md, Open-VSX LSP extensions); their skill / mcp / hook components are already provisioned here (+ .cursor/rules)."
 
 Remove-AgentsCache
@@ -760,6 +834,6 @@ Log "done: $Action ($Scope, agent=$Agent). $($Skills.Count) skills, MCPs, cursor
 Write-Host ''
 Write-Host "Add these stack-generated, machine-local artifacts to the project's .gitignore (or .git\info\exclude):"
 Write-Host '  .serena          serena per-project state: registry, cache, language servers (SERENA_HOME=.serena/home)'
-Write-Host '  .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules'
+Write-Host '  .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules + install stamp'
 Write-Host '  .slopwatch       dotnet-slopwatch output'
 Write-Host '  .playwright      playwright MCP user-data-dir + screenshots'

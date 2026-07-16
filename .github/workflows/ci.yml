@@ -65,8 +65,11 @@ jobs:
       # and the fixtures still test the artifacts under test rather than whatever real main holds.
       # (That the pin PREFERS main over the current branch is a different claim - the
       # 'pinned to main' step below proves it against a fixture whose branches differ.)
+      # switch -C, not branch -f: on a main run actions/checkout has main CHECKED OUT
+      # (`checkout --force -B main`), and branch -f refuses to move a checked-out branch - so
+      # branch -f is fine on develop and exits 128 on the release push. switch -C covers both.
       - name: give the checkout a local main ref (the fallback clone is pinned to it)
-        run: git branch -f main HEAD
+        run: git switch -C main
 
       - name: install skills-only into a throwaway project
         env:
@@ -188,8 +191,11 @@ jobs:
       # and the fixtures still test the artifacts under test rather than whatever real main holds.
       # (That the pin PREFERS main over the current branch is a different claim - the
       # 'pinned to main' step below proves it against a fixture whose branches differ.)
+      # switch -C, not branch -f: on a main run actions/checkout has main CHECKED OUT
+      # (`checkout --force -B main`), and branch -f refuses to move a checked-out branch - so
+      # branch -f is fine on develop and exits 128 on the release push. switch -C covers both.
       - name: give the checkout a local main ref (the fallback clone is pinned to it)
-        run: git branch -f main HEAD
+        run: git switch -C main
 
       - name: install -SkillsOnly into a throwaway project
         shell: pwsh

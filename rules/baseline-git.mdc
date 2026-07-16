@@ -32,4 +32,5 @@ PROJ-142
 
 On any non-trivial diff, before committing or presenting: run the formatter, then Bugbot (`/review`),
 plus any diff gates named in the project's `AGENTS.md` - then satisfy the Definition-of-done gate.
-Skip for typos / one-line / formatting-only diffs.
+Findings caught here land in the same commit; found later they become fixup noise or shipped
+defects. Skip for typos / one-line / formatting-only diffs.

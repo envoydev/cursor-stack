@@ -78,6 +78,14 @@ Invariants).
 
 ## Working in THIS repo - invariants
 
+- **Branching: `develop` carries the work, `main` releases.** Land everything on `develop` (branch
+  off it for anything non-trivial); merging `develop` -> `main` IS the release act - `release.yml`
+  rebuilds the rolling `latest` archive from that merge, and that revision is what every install
+  delivers. Never commit feature work straight to `main`, and keep `main` the GitHub default branch
+  (the installers' clone fallback and the README's bootstrap both deliver the default branch). CI
+  gates every push to `develop` and `main` plus every PR into either - but note it cannot *block* a
+  release: `release.yml` fires on the `main` push independently, so a red `main` publishes anyway.
+  Branch protection on `main` (require the PR + green checks) is what would actually gate that.
 - **Public repo.** No private project names or absolute personal paths in any tracked file -
   generic 'consuming project' references only.
 - **Parity / source-of-truth.** Each `.sh`/`.ps1` twin matches its sibling; `npm run lint`

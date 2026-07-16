@@ -27,9 +27,20 @@ name: ci
 # Both twins resolve the target project with `git rev-parse --show-toplevel`, so the fixture
 # has to be a real git repo, not a bare directory.
 
+# develop carries the work; merging develop -> main IS the release act (release.yml rebuilds the
+# rolling 'latest' archive from that merge, and that revision is what every install delivers). So
+# gate both: every push to develop, every push to main, and every PR into either.
+#
+# main is on the push trigger deliberately, where the peer stack drops it: release.yml publishes
+# from a main push on its own, with no gate of its own, so CI here is the only signal that the
+# revision consumers just received is green. It cannot block that publish - workflows are
+# independent - but a red main is worth knowing about immediately. Feature branches get their
+# coverage from the PR they open, not from every push.
 on:
   push:
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
 
 jobs:
   lint:

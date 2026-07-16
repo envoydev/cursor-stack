@@ -78,6 +78,8 @@ const NON_SKILL_TOKENS = new Set([
     'baseline-project-related-context',  // generated per-project awareness rule, not a skill
     'baseline-project-capabilities',     // generated per-project awareness rule, not a skill
     'project-code-style',                // generated per-project code-style rule, not a skill
+    'dotnet-repair-agents',              // installed .mdc repair-router rule, not a skill
+    'angular-repair-agents',             // installed .mdc repair-router rule, not a skill
     'general-purpose',                   // built-in agent type named in the template
     // Third-party names the skills quote: packages, CLI tools, framework
     // selectors, and one concept. None are skills; all are real things.

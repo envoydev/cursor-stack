@@ -59,6 +59,15 @@ jobs:
       - name: syntax
         run: bash -n scripts/cursor-stack.sh
 
+      # Every step below drives the fallback clone, which is pinned -b main. actions/checkout
+      # fetches only the triggering ref, so refs/heads/main does not exist on a develop run and
+      # the clone finds no branch. Point a local main at THIS commit, once: the pin is exercised
+      # and the fixtures still test the artifacts under test rather than whatever real main holds.
+      # (That the pin PREFERS main over the current branch is a different claim - the
+      # 'pinned to main' step below proves it against a fixture whose branches differ.)
+      - name: give the checkout a local main ref (the fallback clone is pinned to it)
+        run: git branch -f main HEAD
+
       - name: install skills-only into a throwaway project
         env:
           STACK_SKILLS_REPO: ${{ github.workspace }}
@@ -82,14 +91,6 @@ jobs:
           STACK_SOURCE_REPO: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          # The fallback clone is pinned to -b main (the release branch), but actions/checkout
-          # fetches only the triggering ref - so refs/heads/main does not exist on a develop run
-          # and the clone would find no branch. Point a local main at THIS commit: the pin is
-          # exercised AND the fixture still tests the artifacts under test rather than whatever
-          # real main holds. (That the pin actually PREFERS main over the current branch is a
-          # different claim, proven by the pin-honored step below.)
-          git -C "$GITHUB_WORKSPACE" branch -f main HEAD
-
           proj="$RUNNER_TEMP/full"
           mkdir -p "$proj" && cd "$proj"
           git init -q . && git config user.email ci@example.com && git config user.name ci
@@ -181,6 +182,15 @@ jobs:
           }
           "parse clean - $($tokens.Count) tokens"
 
+      # Every step below drives the fallback clone, which is pinned -b main. actions/checkout
+      # fetches only the triggering ref, so refs/heads/main does not exist on a develop run and
+      # the clone finds no branch. Point a local main at THIS commit, once: the pin is exercised
+      # and the fixtures still test the artifacts under test rather than whatever real main holds.
+      # (That the pin PREFERS main over the current branch is a different claim - the
+      # 'pinned to main' step below proves it against a fixture whose branches differ.)
+      - name: give the checkout a local main ref (the fallback clone is pinned to it)
+        run: git branch -f main HEAD
+
       - name: install -SkillsOnly into a throwaway project
         shell: pwsh
         env:
@@ -212,11 +222,6 @@ jobs:
           STACK_SOURCE_REPO: ${{ github.workspace }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # The fallback clone is pinned to -b main; actions/checkout fetches only the triggering
-          # ref, so point a local main at THIS commit - the pin is exercised and the fixture still
-          # tests the artifacts under test. See the linux job for the full note.
-          & git -C $env:GITHUB_WORKSPACE branch -f main HEAD
-
           $proj = Join-Path $env:RUNNER_TEMP 'full'
           New-Item -ItemType Directory -Path $proj -Force | Out-Null
           Set-Location $proj

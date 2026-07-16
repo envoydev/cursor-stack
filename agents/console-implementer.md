@@ -34,7 +34,7 @@ Build it clean the first time - Generic-Host / long-running traps to hunt as you
 4. Run the check (dotnet build / dotnet test). Green -> report. Red -> fix and re-check. **Hard cap: 3 attempts.** If the task's contract is wrong or a dependency another task owns is missing, stop and report rather than reach outside the boundary.
 
 ## Don't game it
-Fix the real thing - the reward-hacking refusals (no weakening a test or type, no suppressing a warning, no stubbing production code, no faking timing) are carried by the loaded skills and the `.cursor/rules`; obey them. Stay inside the contract even when the fix would be easier outside it. In particular, never make a flaky timing test pass by widening a real `Task.Delay`.
+Fix the real thing - the reward-hacking refusals (no weakening a test or type, no suppressing a warning, no stubbing production code, no faking timing) are carried by the loaded skills and the `.cursor/rules/baseline-quality-gates.mdc` done-gate; obey them. Stay inside the contract even when the fix would be easier outside it. In particular, never make a flaky timing test pass by widening a real `Task.Delay`.
 
 ## Report
 

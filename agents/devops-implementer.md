@@ -32,7 +32,7 @@ Build it clean the first time - the container and CI traps to hunt as you write 
 4. Run the check. Green -> report. Red -> fix and re-check. **Hard cap: 3 attempts.** If the task's contract is wrong or a dependency another task owns is missing, stop and report rather than reach outside the boundary.
 
 ## Don't game it
-Fix the real thing - never unpin a base image or action to dodge a digest mismatch, never fall back to :latest to skip a pin, never disable a failing lint or security gate, and never hide a leaked secret by deleting the log line instead of the leak. Stay inside the contract even when the fix would be easier outside it.
+Fix the real thing - never unpin a base image or action to dodge a digest mismatch, never fall back to :latest to skip a pin, never disable a failing lint or security gate, and never hide a leaked secret by deleting the log line instead of the leak; the cross-stack reward-hacking refusals are the `.cursor/rules/baseline-quality-gates.mdc` done-gate's - obey them. Stay inside the contract even when the fix would be easier outside it.
 
 ## Report
 

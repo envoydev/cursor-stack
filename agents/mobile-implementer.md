@@ -36,7 +36,7 @@ The Ionic/Capacitor traps I check in my own diff - the non-portable ones a gener
 If the task's contract is wrong or a dependency is missing, stop and report rather than reach outside the boundary.
 
 ## Don't game it
-Fix the real thing. The reward-hacking refusals - no weakening a test or type, no suppressing a warning, no stubbing production code, no faking timing - are carried by the `.cursor/rules` and skills; obey them. Stay inside the contract even when the fix would be easier outside it.
+Fix the real thing. The reward-hacking refusals - no weakening a test or type, no suppressing a warning, no stubbing production code, no faking timing - are carried by `typescript`, `angular-conventions`, and the `.cursor/rules/baseline-quality-gates.mdc` done-gate; obey them. Stay inside the contract even when the fix would be easier outside it.
 
 ## Report
 

@@ -151,8 +151,13 @@ each section lean (the skill and rule descriptions carry the rest):
 3. **Commands** - copy-pasteable build / test / run / migrate / publish, with any environment quirks.
 4. **Architecture** - layers / modules, dependency rules, folder organization.
 5. **Key patterns** - the non-obvious in-house patterns a newcomer would trip on.
-6. **Code conventions** - the house-style skill for each file type; add a globbed `.cursor/rules/*.mdc` so it auto-attaches.
-7. **Testing approach** - per-layer strategy, what's excluded, the integration / regression net.
-8. **Load by artifact** - a table mapping this repo's concrete files / types / constructs to the third-party skills it can't re-describe (house-style skills self-fire, so they're not in it).
-9. **Operational notes** - runtime constraints and gotchas that shape code decisions.
-10. **Cross-cutting checklists** - for each change that must move several files in lockstep, the full touch-point list.
+6. **Secrets + config** - where this project keeps its secrets and env config (the globs).
+   The always-on `baseline-security.mdc` rule says never to read or echo `.env*`, `*.pem`,
+   `*.key` "and whatever config files the stack keeps secrets in" - this is the blank that
+   fills. Naming them here IS the mechanism: Cursor has no deny-list to mirror them into, so
+   an unnamed secret file is one the rule cannot point at.
+7. **Code conventions** - the house-style skill for each file type; add a globbed `.cursor/rules/*.mdc` so it auto-attaches.
+8. **Testing approach** - per-layer strategy, what's excluded, the integration / regression net.
+9. **Load by artifact** - a table mapping this repo's concrete files / types / constructs to the third-party skills it can't re-describe (house-style skills self-fire, so they're not in it).
+10. **Operational notes** - runtime constraints and gotchas that shape code decisions.
+11. **Cross-cutting checklists** - for each change that must move several files in lockstep, the full touch-point list.

@@ -5,7 +5,7 @@
 The single source of truth for the **Cursor** half of a personal coding-agent setup - not an
 application. It was split out of the Claude stack (`claude-stack`, still the peer repo, renamed
 from `agents-stack`), and is now **fully standalone**: this repo owns the whole Cursor delivery -
-the installers, the 65 vendored skills, the 33 Cursor-contract subagents, the `.mdc` rules, the
+the installers, the 66 vendored skills, the 33 Cursor-contract subagents, the `.mdc` rules, the
 hooks, and the `templates/AGENTS.template.md` base template. The installer downloads THIS repo's
 release archive (clone fallback) to copy `skills/` in, so nothing is fetched from the peer at install. Consuming projects pull from here -
 they do not own their copy; a change made only inside a consuming project is throwaway (see
@@ -18,20 +18,23 @@ Invariants).
   `cursor-stack.html` - the browser inventory.
 - `templates/AGENTS.template.md` - the stack-neutral per-project skeleton each consuming project's
   `AGENTS.md` is filled in from (Cursor reads `AGENTS.md`).
-- `skills/` - the 65 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
+- `skills/` - the 66 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
   `SKILL.md`), copied into a project's `.cursor/skills/` out of the run's source snapshot. The
-  14 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
+  15 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
   repo-level skills: the skill loads only on an explicit `/name`).
-- `agents/` - the 33 Cursor-contract subagents, fetched into a project's `.cursor/agents/`.
+- `agents/` - the 33 Cursor-contract subagents, copied into a project's `.cursor/agents/`.
   Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so they keep the full orchestration
   (`project-task-flow` fans out designer -> implementer -> verifier, the diagnosers dispatch
   `evidence-gatherer`, the serena-memory handoff works). Cursor's platform limits shape the
   contract: `model: inherit` (no reliable model/effort pin), no per-tool `tools:` allowlist (only
   a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of
   auto-delegation.
-- `rules/` - twelve `.mdc` rules fetched into a project's `.cursor/rules/`: five always-on
+- `rules/` - 16 `.mdc` rules copied into a project's `.cursor/rules/`: five always-on
   `baseline-*.mdc` (`alwaysApply` - interaction / quality-gates / security / git / navigation) +
-  six glob-auto-attaching convention rules + the always-on `ponytail.mdc`.
+  seven glob-auto-attaching convention rules (csharp / typescript / sql / angular / wpf / scss /
+  devops) + `markdown-docs.mdc` (a trigger patch: the doc skills' keywords miss a plain `.md`
+  content edit) + the two repair routers (`dotnet-` / `angular-repair-agents.mdc`: a red build or
+  suite goes to a resolver seat) + the always-on `ponytail.mdc`.
 - `hooks/` - `guard-protected-force-push.js` + `guard-catastrophic-rm.js` in Cursor's
   `beforeShellExecution` contract, wired via `.cursor/hooks.json`.
 - `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins), dependency-free
@@ -83,8 +86,10 @@ Invariants).
 - **Branching: `develop` carries the work, `main` releases.** Land everything on `develop` (branch
   off it for anything non-trivial); merging `develop` -> `main` IS the release act - `release.yml`
   rebuilds the rolling `latest` archive from that merge, and that revision is what every install
-  delivers. Never commit feature work straight to `main`, and keep `main` the GitHub default branch
-  (the installers' clone fallback and the README's bootstrap both deliver the default branch). CI
+  delivers. Never commit feature work straight to `main`. The installers no longer depend on which
+  branch is default - the release archive is built from `main` and the clone fallback is pinned
+  `-b main` - but keep `main` the default anyway: it is what a visitor and a plain `git clone` land
+  on. CI
   gates every push to `develop` and `main` plus every PR into either - but note it cannot *block* a
   release: `release.yml` fires on the `main` push independently, so a red `main` publishes anyway.
   Branch protection on `main` (require the PR + green checks) is what would actually gate that.

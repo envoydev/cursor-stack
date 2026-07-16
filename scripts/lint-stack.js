@@ -461,6 +461,49 @@ function main()
         }
     }
 
+    // 5b. CLAUDE.md's prose counts. Not covered by the README check above, and they DID drift
+    //     silently (it still said 65 skills / 14 orchestration / twelve rules well after each
+    //     grew). The maintainer file is the one people read to learn the shape of the repo, so a
+    //     number that lies there is worse than no number. Numerals only - spelled-out counts are
+    //     deliberately not used so this stays checkable.
+    const claudeMd = path.join(ROOT, 'CLAUDE.md');
+    if (fs.existsSync(claudeMd))
+    {
+        const text = fs.readFileSync(claudeMd, 'utf8');
+        // Read the dirs here rather than reuse check 6's set - this check runs before it, and
+        // depending on that order is how a lint grows a load-bearing accident.
+        const orchestration = (fs.existsSync(SKILLS_DIR)
+            ? fs.readdirSync(SKILLS_DIR, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)
+            : []
+        ).filter(d =>
+        {
+            const md = path.join(SKILLS_DIR, d, 'SKILL.md');
+            return fs.existsSync(md) && fs.readFileSync(md, 'utf8').includes('disable-model-invocation: true');
+        }).length;
+
+        for (const [label, re, expected] of [
+            ['vendored skills', /(\d+) vendored skills/, primary.active.size],
+            ['vendored Cursor Skills', /(\d+) vendored Cursor Skills/, primary.active.size],
+            ['orchestration skills', /(\d+) orchestration skills/, orchestration],
+            ['`.mdc` rules', /(\d+) `\.mdc` rules/, arrayCounts.rule],
+        ])
+        {
+            const m = text.match(re);
+            if (m && Number(m[1]) !== expected)
+            {
+                flag(`CLAUDE.md says ${m[1]} ${label} but the repo holds ${expected}`);
+            }
+        }
+
+        for (const m of text.matchAll(/(\d+) Cursor-contract subagents/g))
+        {
+            if (Number(m[1]) !== arrayCounts.agent)
+            {
+                flag(`CLAUDE.md says ${m[1]} Cursor-contract subagents but the manifest holds ${arrayCounts.agent}`);
+            }
+        }
+    }
+
     // 7. cursor-stack.html agrees with the manifests.
     const html = fs.readFileSync(STACK_HTML, 'utf8');
 

@@ -96,6 +96,29 @@ const NON_SKILL_TOKENS = new Set([
     'dotnet-dump',                       // .NET CLI diagnostic tool
     'dotnet-gcdump',                     // .NET CLI diagnostic tool
     'kebab-case',                        // a naming convention, named in prose
+    // Bundler / npm / extension tooling the ported skills quote - packages and
+    // config keys, none of them skills.
+    "fork-ts-checker-webpack-plugin",     // webpack type-check plugin
+    "tsconfig-paths-webpack-plugin",      // webpack path-alias resolver
+    "speed-measure-webpack-plugin",       // webpack profiling plugin
+    "thread-loader",                      // webpack parallel loader
+    "hidden-source-map",                  // webpack devtool value
+    "write-dts",                          // ts-loader / fork-ts-checker option
+    "ignore-scripts",                     // npm config key
+    "min-release-age",                    // npm config key (cooldown)
+    "default-days",                       // npm cooldown sub-key
+    "run-s",                              // npm-run-all binary
+    "run-p",                              // npm-run-all binary
+    "web-vitals",                         // Core Web Vitals package
+    "aspect-ratio",                       // CSS property named in prose
+    "ts-pattern",                         // pattern-matching package
+    "no-floating-promises",               // typescript-eslint rule id
+    "dotnet-trace",                       // .NET CLI diagnostic tool
+    "dotnet-counters",                    // .NET CLI diagnostic tool
+    "unsafe-eval",                        // CSP keyword
+    "chrome-types",                       // Chrome extension typings package
+    "vitest-axe",                         // a11y test package
+    "guard-ungated-commit",               // installed hook script, not a skill
 ]);
 
 const findings = [];

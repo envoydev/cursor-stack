@@ -81,6 +81,8 @@ Total time: <sum across all groups>.
 - Accept Ukrainian variants in input: `г`, `год`, `гг`, `хв`, `хвил` - treat as hours/minutes accordingly.
 - Accept decimal hours in input and convert: `0.25h` → `15m`, `0.5h` → `30m`, `0.75h` → `45m`, `1.25h` → `1h 15m`, `2.5h` → `2h 30m`.
 - If time is not provided for a task, write `(time not specified)`.
+- DERIVED time is never invented: when the input gives a total or an estimate that the output shape must SPLIT per day or per task, stop and ask (an explicit question) for the real split before drafting any dated log (measured: an unasked 8h/8h/5h+3h/8h split cost four correction round-trips, with the ask finally firing after the third). A task with no time given at all simply takes `(time not specified)` - the placeholder covers a missing figure, the ask covers an invented split.
+- Multi-ticket day granularity: one entry per ticket is not a safe default - mirror the granularity of the user's prior day-entries in the same log, and where no precedent exists, ask as one explicit question (measured: a two-ticket day drafted per-ticket was rejected for merged wording).
 - Self-check before output: re-add each day's task times and confirm the sum equals the printed `Total time` (a `(time not specified)` line counts as zero); on a mismatch, recompute the total from the task lines - never print an unverified sum.
 
 **Task grouping within a day**
@@ -109,7 +111,7 @@ Total time: <sum across all groups>.
 - Day with no work (vacation, sick leave, public holiday): output the day header followed by a single line `Off (<reason>).` and skip `Total time`.
 - Input mentions a task but provides no action verb: prefix with `Worked on` (English) or `Працював над` (Ukrainian).
 - Time mismatch (bullets sum to a different total than the input's stated total): trust the bullets, recompute `Total time` from them, do not echo the input's total.
-- Pure non-work entries that aren't a ticket and aren't a recurring item (lunch, coffee break): omit entirely. Personal life is not in the log.
+- Pure non-work entries that aren't a ticket and aren't a recurring item (lunch, coffee break): omit entirely. Private life is not in the log.
 
 ## Style guidance
 
@@ -127,7 +129,7 @@ Output:
 Log of work 13.04.2026.
 
 Monday:
-1 ABC-1319 (2h) - Investigated a crop rotation issue by field ID. Fixed missing record handling and tested the change. Testing. Merged changes.
+1 ABC-1319 (2h) - Investigated a crop rotation issue by field ID. Fixed missing record handling. Testing.
 2 ABC-1320 (30m) - Created a merge request.
 3 Other (1h) - Attended team meeting.
 Total time: 3h 30m.

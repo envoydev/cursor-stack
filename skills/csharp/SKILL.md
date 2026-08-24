@@ -1,15 +1,17 @@
 ---
 name: csharp
-description: C# conventions (.NET 8 / C# 12 floor) - style/structure (file layout, naming, member/ctor ordering, methods, types, visibility, design-pattern (GoF) awareness, modern C# 12/13/14 syntax, forbidden patterns, XML doc) and runtime behavior (DateTime/IClock, async, dispose, exceptions + Result, structured logging, secrets/config, LINQ, System.Text.Json, decoupling + DI lifetimes). Load before creating or editing any `.cs` file - writing, reviewing, or refactoring C#; do not lean on recalled conventions. The always-load baseline; specialist areas (concurrency, performance, EF, web, messaging) route out through the `dotnet` companion router, not here.
+description: "C# conventions (.NET 8 / C# 12 floor) - style/structure (file layout, naming, member/ctor ordering, methods, types, visibility, design-pattern (GoF) awareness, modern C# 12/13/14 syntax, forbidden patterns, XML doc) and runtime behavior (DateTime/IClock, async, dispose, exceptions + Result, structured logging, secrets/config, LINQ, System.Text.Json, decoupling + DI lifetimes). Load before creating or editing any `.cs` file - writing, reviewing, or refactoring C#; do not lean on recalled conventions. The always-load baseline; specialist areas (performance, EF, web, messaging, hosted workers) route out through the `dotnet` companion router, not here."
 ---
 
 # C# Conventions
 
+For any BCL or NuGet API surface not pinned down here, resolve signatures with the `context7` MCP rather than memory - never by grepping the NuGet cache or decompiled sources (measured in a sibling leaf: ~5.2k tokens grep-ing minified bundles for an answer the live MCP held; the routing line lived only in a router skill this leaf never loads).
+
 C# style, structure, and runtime conventions in one place: how code is shaped (naming, layout, syntax) and how it behaves (async, I/O, exceptions, logging, DI). Style is enforced by `.editorconfig` (Allman braces, 120-char line limit, file-scoped namespaces) and `EnforceCodeStyleInBuild=true`.
 
-**Formatting, naming, and language-feature style is authoritative in `references/csharp-style.md`** (with the full canonical `.editorconfig`); the .NET Framework / C# 7.3 delta is `references/net-framework-48.md`. This file keeps the house rules those style docs do not cover - structure limits, member and constructor ordering, forbidden patterns, XML doc, and the runtime behavior below - and where it overlaps them, the style docs win. **Above all of these, a project's own `.editorconfig` and its `docs/PROJECT-CODE-STYLE.md` are higher priority: where a project diverges from these general conventions, follow the project.**
+**Formatting, naming, and language-feature style is authoritative in `references/csharp-style.md`** (with the full canonical `.editorconfig`); the .NET Framework / C# 7.3 delta is `references/net-framework-48.md`. This file keeps the house rules those style docs do not cover - structure limits, member and constructor ordering, forbidden patterns, XML doc, and the runtime behavior below - and where it overlaps them, the style docs win. **Above all of these, a project's own `.editorconfig` and its `<docs-path>/PROJECT-CODE-STYLE.md` are higher priority: where a project diverges from these general conventions, follow the project.**
 
-**Floor: .NET 8 / C# 12.** Every rule below assumes at least this target - `TimeProvider`, `UnsafeAccessorAttribute`, the static argument throw-helpers, and the C# 12 collection expressions / primary constructors are all in. Where a convention names a newer feature (C# 13 `System.Threading.Lock`, the `field` keyword), it flags the version inline; treat those as opt-in once the project's target moves up.
+**Floor: .NET 8 / C# 12.** Every rule below assumes at least this target - `TimeProvider`, `UnsafeAccessorAttribute`, the static argument throw-helpers, and the C# 12 collection expressions / primary constructors are all in. Where a convention names a newer feature (C# 13 `System.Threading.Lock`, the C# 14 `field` keyword), it flags the version inline; treat those as opt-in once the project's target moves up.
 
 On a .NET Framework 4.8 (net48) codebase the C# 7.3 language ceiling, the polyfill packages, and the SynchronizationContext async caveat differ from this floor - those deltas are in `references/net-framework-48.md`.
 
@@ -116,10 +118,10 @@ Performance concerns (sealing, readonly structs, `Span<T>` / `Memory<T>` / `Arra
 - No commented-out code - delete it.
 - No `TODO` without an associated ticket reference.
 - No reflection in business or hot-path code; use source generators or compile-time alternatives. No object-mapping libraries (AutoMapper / Mapster / ExpressMapper) - write explicit mapping methods (compile-time checked, debuggable, refactor-safe). Reflection is acceptable only in serialization, the DI container, ORM / EF, test infrastructure, or one-time bootstrap - never for DTO / domain mapping. When you must reach a private member (serializer, test helper), use `UnsafeAccessorAttribute` (.NET 8), not `System.Reflection`.
-
-When a convention here drives a package change - adding, removing, or swapping one (e.g. dropping a banned mapper, replacing Newtonsoft with System.Text.Json) - the install itself follows `dotnet-project-setup`: use the `dotnet` CLI, never hand-edit `Directory.Packages.props`.
 - No `dynamic` - use `object` + pattern matching or a typed interface.
 - No top-level statements outside `Program.cs`.
+
+Routing note: when a convention here drives a package change - adding, removing, or swapping one (e.g. dropping a banned mapper, replacing Newtonsoft with System.Text.Json) - the install itself follows `dotnet-project-setup`: use the `dotnet` CLI, never hand-edit `Directory.Packages.props`.
 
 ## Documentation
 - Every public API surface has XML doc comments covering parameters, return values, thrown exceptions, and remarks for non-obvious behavior.
@@ -152,7 +154,7 @@ Behavior, I/O, and composition rules.
 - Never call `DateTime.Now` for measurements - use `Stopwatch`.
 
 ## Async
-The async baseline - async all the way with no `.Result` / `.Wait()` / `.GetAwaiter().GetResult()`, no `async void` outside event handlers, `ValueTask` only where benchmarks justify it and never awaited twice, `await foreach` for async streams - is authoritative in `references/csharp-style.md`. House additions:
+The async baseline - async all the way with no `.Result` / `.Wait()` / `.GetAwaiter().GetResult()`, no `async void` outside event handlers, `ValueTask` only where benchmarks justify it and never awaited twice, `await foreach` for async streams - is authoritative in `references/csharp-style.md`; the applied concurrency mechanics - deadlock avoidance, cancellation threading, `SemaphoreSlim` / `Interlocked`, `Channel<T>` basics, bounded parallelism - are `references/concurrency.md`. House additions:
 - Always pass and forward `CancellationToken` for I/O-bound or long-running operations.
 - Use `ConfigureAwait(false)` in library code; ignore it in ASP.NET Core application code (no sync context).
 - Return `IAsyncEnumerable<T>` for streaming results (paged DB reads, long-running enumerations); annotate the `CancellationToken` parameter with `[EnumeratorCancellation]`.
@@ -170,12 +172,12 @@ The async baseline - async all the way with no `.Result` / `.Wait()` / `.GetAwai
 - Do not use exceptions for control flow.
 - Re-throw with `throw;` not `throw ex;` (preserves stack trace).
 - Validate arguments at the top of public methods. Prefer the static throw-helpers over hand-written guards: `ArgumentNullException.ThrowIfNull(x)`, `ArgumentException.ThrowIfNullOrWhiteSpace(s)`, `ArgumentOutOfRangeException.ThrowIfNegative` / `ThrowIfGreaterThan(...)` (.NET 8).
-- Mapping a Result to an HTTP response and the `ProblemDetails` contract are the web surface - route via `dotnet` to `dotnet-error-handling`; don't shape HTTP errors in business code.
+- Mapping a Result to an HTTP response and the `ProblemDetails` contract are the web surface - route via `dotnet` to `dotnet-web-error-handling`; don't shape HTTP errors in business code.
 
 ## Logging
-- Structured logging via `ILogger<T>`. Use templates with named placeholders: `_logger.LogInformation('Order {OrderId} placed for {UserId}', orderId, userId)`. Never use string interpolation in log calls.
+- Structured logging via `ILogger<T>`. Use templates with named placeholders: `_logger.LogInformation("Order {OrderId} placed for {UserId}", orderId, userId)`. Never use string interpolation in log calls.
 - Log levels: `Trace` (diagnostic noise), `Debug` (dev), `Information` (business events), `Warning` (recoverable issue), `Error` (operation failed), `Critical` (system unusable).
-- Log exceptions with the exception object as the first arg: `_logger.LogError(ex, 'Failed to {Action}', actionName)`. Never `.ToString()` an exception into the message.
+- Log exceptions with the exception object as the first arg: `_logger.LogError(ex, "Failed to {Action}", actionName)`. Never `.ToString()` an exception into the message.
 - Never log: passwords, tokens, secrets, full payment data, PII beyond what is operationally needed. For healthcare and e-commerce projects, treat full identifiers as PII.
 - One log statement per logical event. Avoid log spam in tight loops.
 

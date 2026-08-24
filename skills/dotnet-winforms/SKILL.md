@@ -1,9 +1,11 @@
 ---
 name: dotnet-winforms
-description: "WinForms conventions for maintenance and modernization - logic out of code-behind (MVP passive view for legacy, the .NET 8 MVVM binding engine for new), DI-resolvable forms, async/await with no UI-thread blocking, BindingSource + INotifyPropertyChanged binding, control/component/GDI disposal, PerMonitorV2 high-DPI, virtual-mode grids, presenter unit tests. Floors new work at .NET 8 / C# 12 and covers 4.8 as the supported-but-frozen maintenance surface. Load before editing any Form, UserControl, code-behind, presenter, or .Designer.cs. Do NOT load for WPF (-> dotnet-wpf), WinUI 3, MAUI, Avalonia, or Uno; async baseline -> csharp, MVP/command orchestration -> csharp-design-patterns, tests -> dotnet-testing, upgrade playbook -> dotnet-migrate, a paired Windows-Service worker -> dotnet-hosted-services."
+description: "WinForms conventions for maintenance and modernization - logic out of code-behind (MVP passive view for legacy, the .NET 8 MVVM binding engine for new), DI-resolvable forms, async/await with no UI-thread blocking, BindingSource + INotifyPropertyChanged binding, control/component/GDI disposal, PerMonitorV2 high-DPI, virtual-mode grids, presenter unit tests. Floors new work at .NET 8 / C# 12 and covers 4.8 as the supported-but-frozen maintenance surface. Load before editing any Form, UserControl, code-behind, presenter, or .Designer.cs. Do NOT load for WPF (-> dotnet-wpf), WinUI 3, MAUI, Avalonia, or Uno; async baseline -> csharp, MVP/command orchestration -> csharp-design-patterns, tests -> dotnet-testing, upgrade playbook -> dotnet-migrate, a paired Windows-Service worker -> dotnet-hosted-services + dotnet-windows-service."
 ---
 
 # WinForms conventions
+
+For any WinForms or NuGet API surface not pinned down here, resolve signatures with the `context7` MCP rather than memory - never by grepping the NuGet cache or decompiled sources (the routing lesson from a sibling leaf: the MCP sat live and unused because the routing line lived only in a router skill this leaf never loads).
 
 WinForms is an immediate-mode, control-tree desktop UI. The realistic work is maintenance and
 modernization of line-of-business apps, not greenfield, so this skill floors **new** work at .NET 8 /
@@ -11,7 +13,7 @@ C# 12 while treating **.NET Framework 4.8 as a supported-but-frozen maintenance 
 serviced, but no new WinForms features land there. The conventions below are the same whichever
 runtime you are on; the version-specific mechanics live in the references.
 
-**Control naming, event-handler naming, and designer-file conventions live in `references/winforms-style.md`.** This SKILL.md owns the architecture (MVP passive view, DI-resolvable forms, disposal, high-DPI, virtual-mode grids); the C# naming baseline is the `csharp` skill. Above these general conventions, a project's own `.editorconfig` and its `docs/PROJECT-CODE-STYLE.md` win where they diverge.
+**Control naming, event-handler naming, and designer-file conventions live in `references/winforms-style.md`.** This SKILL.md owns the architecture (MVP passive view, DI-resolvable forms, disposal, high-DPI, virtual-mode grids); the C# naming baseline is the `csharp` skill. Above these general conventions, a project's own `.editorconfig` and its `<docs-path>/PROJECT-CODE-STYLE.md` win where they diverge.
 
 **Load the version reference for the concrete mechanics:**
 
@@ -23,7 +25,7 @@ observer, and memento orchestration -> `csharp-design-patterns`; test framework 
 mechanics -> `dotnet-testing`; the upgrade safety playbook (baseline, staged, rollback) ->
 `dotnet-migrate`; SDK-style project shape and packaging -> `dotnet-project-setup`; general
 managed-memory profiling -> `dotnet-diagnostics`; general perf and type design ->
-`dotnet-performance`; a paired Windows-Service half -> `dotnet-hosted-services`.
+`dotnet-performance`; a paired Windows-Service half -> `dotnet-hosted-services` + `dotnet-windows-service`.
 
 ## Logic out of code-behind - the one rule everything rests on
 
@@ -81,9 +83,9 @@ and applies unchanged. The WinForms-specific points:
 - **Report progress with `IProgress<T>` / `Progress<T>`** - `Progress<T>` captures the creating
   thread's `SynchronizationContext` and raises its callback there, so a worker reports from any
   thread and the UI update lands safely. Pair it with a `CancellationToken` for cancellation.
-- **Marshal back with `Control.Invoke` / `BeginInvoke`.** On modern .NET prefer the async
+- **Marshal back with `Control.Invoke` / `BeginInvoke`.** From .NET 9 prefer the async
   `Control.InvokeAsync`, which removes a class of deadlocks (see **references/modern-net.md**); it does
-  not exist on 4.8.
+  not exist on .NET 8 or 4.8 - there, `Invoke`/`BeginInvoke` stay the marshaling primitives.
 - **`BackgroundWorker` is legacy** - supported, but no longer the recommended model and it only
   offloads CPU work, not I/O. New code uses `await` for I/O and an awaited `Task.Run` for CPU-bound
   work, marshaling UI updates through `IProgress<T>` or `InvokeAsync`.

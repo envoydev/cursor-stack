@@ -1,6 +1,6 @@
 # C# on .NET Framework (C# 7.3 on .NET Framework 4.6.x / 4.7.x / 4.8)
 
-The authoritative house style for C# on .NET Framework: formatting, naming, and language-feature usage only. `SKILL.md` and `references/csharp-style.md` floor at .NET 8 / C# 12; this file is the delta for a Framework codebase, where the C# 7.3 language ceiling, the polyfill packages, and the `SynchronizationContext` async model differ - the modern conventions otherwise still apply. As everywhere, a project's own `.editorconfig` / `docs/PROJECT-CODE-STYLE.md` is higher priority than this general baseline. 4.8 is supported (tied to the Windows lifecycle) but frozen: write to these constraints, and treat the move to modern .NET as debt reduction (the migration path is `dotnet-migrate`).
+The authoritative house style for C# on .NET Framework: formatting, naming, and language-feature usage only. `SKILL.md` and `references/csharp-style.md` floor at .NET 8 / C# 12; this file is the delta for a Framework codebase, where the C# 7.3 language ceiling, the polyfill packages, and the `SynchronizationContext` async model differ - the modern conventions otherwise still apply. As everywhere, a project's own `.editorconfig` / `<docs-path>/PROJECT-CODE-STYLE.md` is higher priority than this general baseline. 4.8 is supported (tied to the Windows lifecycle) but frozen: write to these constraints, and treat the move to modern .NET as debt reduction (the migration path is `dotnet-migrate`).
 
 Baseline: Microsoft/.NET Framework conventions with pragmatic senior-level overrides, aligned to legacy StyleCop + Rider default inspections.
 
@@ -158,7 +158,7 @@ switch (shape)
 - Fully supported. `Task`/`Task<T>`/`ValueTask` all available (`ValueTask` via `System.Threading.Tasks.Extensions` NuGet on older Framework).
 - NOT available: `IAsyncEnumerable<T>` / `await foreach` (C# 8 + needs `Microsoft.Bcl.AsyncInterfaces` to even compile, awkward on Framework - avoid; add `System.Linq.Async` for LINQ over async streams if you must).
 - **`ConfigureAwait(false)` on every library `await` is load-bearing here, not an optimization.** Unlike ASP.NET Core (no `SynchronizationContext`), classic ASP.NET (`AspNetSynchronizationContext`), WPF, and WinForms each install a real single-threaded context - it is your defense against the sync-over-async deadlock a blocking caller imposes.
-- Do not block with `.Result` / `.Wait()` / `.GetAwaiter().GetResult()` from a context-bound thread - it deadlocks far more readily than on .NET Core. The fix is always async-all-the-way, never a blocking bridge; the `SemaphoreSlim`/cancellation mechanics are `dotnet-hosted-services`' `references/concurrency.md`.
+- Do not block with `.Result` / `.Wait()` / `.GetAwaiter().GetResult()` from a context-bound thread - it deadlocks far more readily than on .NET Core. The fix is always async-all-the-way, never a blocking bridge; the `SemaphoreSlim`/cancellation mechanics are this skill's `references/concurrency.md`.
 - In app-level code (a classic-ASP.NET controller, a UI event handler) keep the default so the continuation resumes on the context that owns `HttpContext.Current`, culture, and the UI thread. `async void` stays for event handlers only.
 
 ```csharp

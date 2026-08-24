@@ -184,75 +184,85 @@ if ($Scope -eq 'project') {
 # MANIFEST - edit these, then run.
 # ===========================================================================
 
-# (1) Skills "repo|skill" (comment a line to skip). Full inventory - every skill (66).
+# (1) Skills "repo|skill" (comment a line to skip). Full inventory - every skill (76).
 $Skills = @(
   # House (envoydev/cursor-stack)
-  'envoydev/cursor-stack|create-ticket'             # ticket generator (bug/story/epic/task) - tracker-agnostic EN Markdown, routes to references/<type>.md
-  'envoydev/cursor-stack|dev-log-convert'           # UA/EN work notes -> structured English work log; trigger 'dev-log'
-  'envoydev/cursor-stack|explain-code-tutor'        # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert
-  'envoydev/cursor-stack|project-quality-loop'             # autonomous review-and-fix loop pipeline over a loops/ folder of numbered prompts
-  'envoydev/cursor-stack|project-architecture-quality-loop'        # deliberate analyze-assess-improve loop - the project-architecture-analyzer capture writes ARCHITECTURE.md + ASSESSMENT.md, fix cons by tier, reconcile docs; manual /-only
-  'envoydev/cursor-stack|project-code-style-analyzer'    # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/PROJECT-CODE-STYLE.md, generates the glob-scoped project-code-style rule; manual /-only
-  'envoydev/cursor-stack|project-architecture-analyzer'  # deliberate architecture capture - dispatches code-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + ASSESSMENT.md + the generated awareness rule baseline-project-architecture.mdc; manual /-only
-  'envoydev/cursor-stack|project-version-upgrade'        # deliberate BREAKING version-event flow (framework/runtime/package major) - plan in-session via context7 + code-analyzer digests, approval gate (auto mode only on explicit user ask), staged execution via implementers + resolvers; manual /-only
-  'envoydev/cursor-stack|project-agent-capabilities'     # deliberate capabilities capture - inventories installed skills/agents/MCPs/plugins, generates the awareness rule baseline-project-agent-capabilities.mdc; manual /-only
-  'envoydev/cursor-stack|project-related-context'        # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.mdc + docs/PROJECT-RELATED-CONTEXT.md; manual /-only
-  'envoydev/cursor-stack|project-build-from-scratch' # greenfield scaffolding + design->scaffold->slice-by-slice build orchestration over the pipeline
-  'envoydev/cursor-stack|project-task-flow'    # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
-  'envoydev/cursor-stack|project-task-cycle'   # gated single-chat vertical: design -> plan audit -> approve -> build -> conformance -> review, a hard user stop between every step
-  'envoydev/cursor-stack|project-verify-plan'      # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /code-review
-  'envoydev/cursor-stack|project-implementer'              # single-chat build step: execute a verified plan task-by-task (contracts + per-task green gate + inline red-resolution, no dispatch), finish via /code-review + the done-gate
-  'envoydev/cursor-stack|project-solution-design'  # single-chat designer twin: read the architecture, judge where a change fits (extend/refactor/isolate), load the stack skill for traps, decompose into an ordered plan; feeds project-verify-plan
-  'envoydev/cursor-stack|project-failure-signatures' # single-chat diagnoser twin: local-runtime crash signatures (null-ref/DI/deadlock/disposed/config-drift/boundary/HTTP-status) -> where to isolate each; pairs with systematic-debugging
-  'envoydev/cursor-stack|project-ci-failure-signatures'        # single-chat CI-diagnoser twin: red-pipeline signatures (compile/restore, green-locally-red-on-runner, quality-gate, signing/release, workflow-config, infra-flake) -> code-vs-environment call + route; pairs with project-failure-signatures
-  'envoydev/cursor-stack|devops'           # DevOps for the .NET/Angular house: Docker multi-stage/digest-pinned/non-root, GitHub Actions CI/CD, safe expand-contract deploys, secrets/OIDC, Aspire AppHost
-  'envoydev/cursor-stack|database-conventions' # cross-engine DB conventions + per-engine skill routing
-  'envoydev/cursor-stack|data-security'    # SQL/data-layer security: parameterized-only injection, least-privilege DB accounts, row-level security, connection-string secrets, encryption, audit
-  'envoydev/cursor-stack|typescript'       # framework-agnostic TS/JS baseline (strict typing, modules, async, JS+JSDoc)
-  'envoydev/cursor-stack|angular-conventions' # Angular 17+/TS house conventions (signals, OnPush, a11y)
-  'envoydev/cursor-stack|angular-material'   # Angular Material + CDK: selective imports, M3 theming, CDK primitives, harnesses
-  'envoydev/cursor-stack|angular-styling'    # Angular CSS/styling: ViewEncapsulation, :host, ::ng-deep ways-out, design tokens, responsive, a11y styling
-  'envoydev/cursor-stack|angular-security'   # Angular/web frontend security: XSS/DomSanitizer bypass, CSP, CSRF, no-secrets-in-bundle, token storage, SSR/TransferState
-  'envoydev/cursor-stack|frontend'         # web frontend router: Angular/TS + in-skill design-quality guidance -> mobile
-  'envoydev/cursor-stack|mobile'           # Ionic/Capacitor router/index over the Angular (angular-conventions) + TypeScript baselines
-  'envoydev/cursor-stack|ionic'            # house Ionic/Capacitor conventions: UI, nav, lifecycle, permissions, plugin sourcing + wrapping
-  'envoydev/cursor-stack|capacitor-release' # Ionic/Capacitor release pipeline: cap sync/build, iOS+Android signing, store submission, OTA, versioning, CI, symbols
-  'envoydev/cursor-stack|mobile-security'  # Ionic/Capacitor mobile security: Keychain/Keystore storage, deep-link validation, permissions, cleartext/WebView hardening
-  'envoydev/cursor-stack|csharp'           # C# house conventions - style, naming, async, logging, DI
-  'envoydev/cursor-stack|csharp-design-patterns' # all 23 GoF patterns with modern .NET 8+ forms
-  'envoydev/cursor-stack|dotnet'           # router mapping .NET work areas to specialist skills
-  'envoydev/cursor-stack|dotnet-architecture-tests' # architecture fitness tests: NetArchTest (default)/ArchUnitNET - layer+dependency+naming+isolation rules as build-failing tests
-  'envoydev/cursor-stack|dotnet-aspire'    # .NET Aspire local orchestration: AppHost, ServiceDefaults, service discovery, dashboard
-  'envoydev/cursor-stack|dotnet-authentication' # ASP.NET Core authn/authz: JWT/OIDC/Identity, policy-based authz, secrets
-  'envoydev/cursor-stack|dotnet-code-quality' # C# quality enforcement: CSharpier formatter ownership, SDK analyzers + AnalysisLevel, .editorconfig severity, TreatWarningsAsErrors (+ legacy batch promotion), Roslynator, CI gate
-  'envoydev/cursor-stack|dotnet-console-apps' # console-app interface surface: CLI arg parsing (System.CommandLine 2.0/Spectre.Console.Cli/Cocona) + bot-SDK integration (Telegram/Discord/Slack/exchange) in a BackgroundService
-  'envoydev/cursor-stack|dotnet-cryptography' # System.Security.Cryptography: SHA-2, AES-GCM, RSA/ECDSA, PBKDF2/Argon2id, constant-time compare
-  'envoydev/cursor-stack|dotnet-error-handling' # Result + ProblemDetails (RFC 9457) + IExceptionHandler + FluentValidation
-  'envoydev/cursor-stack|dotnet-grpc'      # gRPC: .proto/codegen, ASP.NET Core host, 4 streaming modes, JWT/mTLS, interceptors, health
-  'envoydev/cursor-stack|dotnet-hosted-services' # worker/background-service host: BackgroundService, ExecuteAsync trap, scoped scope, PeriodicTimer, shutdown, Channels
-  'envoydev/cursor-stack|dotnet-messaging' # event-driven messaging: Wolverine (MIT)/MassTransit, outbox, sagas, RabbitMQ/Azure SB
-  'envoydev/cursor-stack|dotnet-migrate'   # safe migration workflow: EF schema, .NET upgrades, NuGet - rollback + verify per step
-  'envoydev/cursor-stack|dotnet-minimal-api' # minimal API endpoint mechanics: MapGroup, TypedResults, endpoint filters, binding
-  'envoydev/cursor-stack|dotnet-mvc-controllers' # controller-based Web API: [ApiController], attribute routing, ActionResult<T>, auto-400 filter, action filters, binding
-  'envoydev/cursor-stack|dotnet-openapi'   # OpenAPI doc (Swashbuckle / built-in .NET 9+) + Scalar docs UI
-  'envoydev/cursor-stack|dotnet-realtime'  # SignalR real-time: strongly-typed Hub<T>, IHubContext push, groups/presence, reconnection, JWT-over-querystring, Redis/Azure backplane
-  'envoydev/cursor-stack|dotnet-security'  # OWASP Top 10 (2021) -> .NET 8 mitigations; deprecated-pattern warnings
-  'envoydev/cursor-stack|dotnet-source-generators' # Roslyn IIncrementalGenerator authoring + built-in generators (GeneratedRegex/LoggerMessage/STJ)
-  'envoydev/cursor-stack|dotnet-testing'   # .NET test strategy: AAA, per-layer coverage, library routing
-  'envoydev/cursor-stack|dotnet-web-backend' # ASP.NET Core cross-cutting: HttpClientFactory, OpenAPI, observability
-  'envoydev/cursor-stack|dotnet-winforms'  # WinForms conventions: MVP/binding, disposal, GDI leaks, high-DPI, migration
-  'envoydev/cursor-stack|dotnet-wpf'       # WPF strict-MVVM conventions, bindings, virtualization
-  'envoydev/cursor-stack|postgres'         # PostgreSQL engine delta: index types, JSONB, SARGability, EXPLAIN, pooling
-  'envoydev/cursor-stack|sqlite'           # SQLite engine delta: WAL/single-writer, PRAGMAs, type affinity, limited ALTER
-  'envoydev/cursor-stack|dotnet-data-access' # EF Core + NHibernate ORM hub (references/): DbContext, tracking, N+1, projection
-  'envoydev/cursor-stack|dotnet-architecture' # architecture decision hub (references/): clean/ddd/vsa/modular/microservices
-  'envoydev/cursor-stack|markdown-style' # Markdown authoring / review: syntax canon (valid) + house style overlay, two-pass procedure
-  'envoydev/cursor-stack|docs-as-code' # docs-as-code authoring: Mermaid sequence/ER diagrams, ADRs (Nygard/MADR 4), C4 views - per-type references/
-  'envoydev/cursor-stack|ilspy-decompile' # decompile a .NET assembly (ilspycmd via dnx) to read real API/behavior - framework internals, NuGet source, pre-upgrade checks
-  'envoydev/cursor-stack|dotnet-project-setup' # .NET solution build spine (hub, references/): src/tests layout, .slnx, Directory.Build.props, global.json, central package management, dotnet-tool pinning
-  'envoydev/cursor-stack|dotnet-performance' # perf-aware .NET design (hub, references/): allocation/type design (struct vs class, Span, ValueTask) + serialization-format choice (STJ source-gen / Protobuf / MessagePack)
-  'envoydev/cursor-stack|dotnet-diagnostics' # measure/diagnose a live .NET process (hub, references/): BenchmarkDotNet microbenchmarks + crash/hang/OOM dump capture & first-look SOS analysis
-  'envoydev/cursor-stack|nx'               # Nx monorepo: project-graph nav + 'nx affected' scoping, generators, module-boundary tags; CLI over MCP; serena-vs-nx routing
+  'envoydev/cursor-stack|create-ticket'                         # ticket generator (bug/story/epic/task) - tracker-agnostic EN Markdown, routes to references/<type>.md
+  'envoydev/cursor-stack|dev-log-convert'                       # UA/EN work notes -> structured English work log; trigger 'dev-log'
+  'envoydev/cursor-stack|explain-code-tutor'                    # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert
+  'envoydev/cursor-stack|project-quality-loop'                  # autonomous review-and-fix loop pipeline over a loops/ folder of numbered prompts
+  'envoydev/cursor-stack|project-architecture-quality-loop'     # deliberate analyze-assess-improve loop - the project-architecture-analyzer capture writes ARCHITECTURE.md + ASSESSMENT.md, fix cons by tier, reconcile docs; manual /-only
+  'envoydev/cursor-stack|project-code-style-analyzer'           # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/PROJECT-CODE-STYLE.md, generates the glob-scoped project-code-style rule; manual /-only
+  'envoydev/cursor-stack|project-architecture-analyzer'         # deliberate architecture capture - dispatches architecture-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + ASSESSMENT.md + the generated awareness rule baseline-project-architecture.mdc; manual /-only
+  'envoydev/cursor-stack|project-test-coverage-analyzer'        # deliberate coverage capture - detect tooling per surface, instrumented run ONCE per surface in the main session, writes docs/test-coverage/COVERAGE.md (90% line after exclusions default, tiered weak points) + raw/ machine-readable results; manual /-only (the loop Read-loads it)
+  'envoydev/cursor-stack|project-test-coverage-loop'            # deliberate coverage analyze-triage-fix loop - runs the capture, works weak points by tier (tests inline/implementer briefs, testability refactors approval-gated, structural = user decision), reconciles docs; manual /-only
+  'envoydev/cursor-stack|project-version-upgrade'               # deliberate BREAKING version-event flow (framework/runtime/package major) - plan in-session via context7 + architecture-analyzer digests, approval gate (auto mode only on explicit user ask), staged execution via implementers + resolvers; manual /-only
+  'envoydev/cursor-stack|project-agent-capabilities'            # deliberate capabilities capture - inventories installed skills/agents/MCPs, generates the awareness rule baseline-project-agent-capabilities.mdc; manual /-only
+  'envoydev/cursor-stack|project-related-context'               # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.mdc + docs/related-context/PROJECT-RELATED-CONTEXT.md; manual /-only
+  'envoydev/cursor-stack|project-build-from-scratch'            # greenfield scaffolding + design->scaffold->slice-by-slice build orchestration over the pipeline
+  'envoydev/cursor-stack|project-solve-cross-task'              # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
+  'envoydev/cursor-stack|project-verify-plan'                   # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /review
+  'envoydev/cursor-stack|project-verify-code'                   # single-chat, no-dispatch review of an assembled build - the inline alternative to /review: rerun build/test, gate vs plan, RUN the app on failable inputs, trace wire-contract changes to consumers, ranked punch-list
+  'envoydev/cursor-stack|project-implementer'                   # single-chat build step: execute a verified plan task-by-task (contracts + per-task green gate + inline red-resolution, no dispatch), finish via /review + the done-gate
+  'envoydev/cursor-stack|project-solution-design'               # single-chat designer twin: read the architecture, judge where a change fits (extend/refactor/isolate), load the stack skill for traps, decompose into an ordered plan; feeds project-verify-plan
+  'envoydev/cursor-stack|project-solve-task'                    # gated single-chat vertical: design -> plan audit -> user approval + build mode -> build -> build review (skippable: project-verify-code inline or the verifier seat) -> done-gate; hard user stop between steps, plan-file + serena-note state survives compaction
+  'envoydev/cursor-stack|project-runtime-failure-signatures'    # single-chat diagnoser twin: local-runtime crash signatures (null-ref/DI/deadlock/disposed/config-drift/boundary/HTTP-status) -> where to isolate each; pairs with systematic-debugging
+  'envoydev/cursor-stack|project-ci-failure-signatures'         # single-chat CI-diagnoser twin: red-pipeline signatures (compile/restore, green-locally-red-on-runner, quality-gate, signing/release, workflow-config, infra-flake) -> code-vs-environment call + route; pairs with project-runtime-failure-signatures
+  'envoydev/cursor-stack|devops'                                # DevOps for the .NET/Angular house: Docker multi-stage/digest-pinned/non-root, GitHub Actions CI/CD, safe expand-contract deploys, secrets/OIDC, Aspire AppHost
+  'envoydev/cursor-stack|database-conventions'                  # cross-engine DB conventions + per-engine skill routing
+  'envoydev/cursor-stack|database-security'                     # SQL/data-layer security: parameterized-only injection, least-privilege DB accounts, row-level security, connection-string secrets, encryption, audit
+  'envoydev/cursor-stack|typescript'                            # framework-agnostic TS/JS baseline (strict typing, modules, async, JS+JSDoc)
+  'envoydev/cursor-stack|javascript'                            # base JS-family language layer: ESM modules, async discipline, two failure channels, modern-feature adoption, untrusted input, naming; typescript stacks on it
+  'envoydev/cursor-stack|ts-js-testing'                         # plain TS/JS testing hub: runner routing (Vitest default), role-keyed strategy, seam stubs over module mocks, exclusion catalog - practices only, the % bar is user-set via project-test-coverage-analyzer
+  'envoydev/cursor-stack|npm'                                   # professional npm: lockfile+ci discipline, supply-chain baseline (ignore-scripts/cooldown/allow-git), audit gating, overrides vs legacy-peer-deps, exports maps + ESM-first publishing, update-bot cooldowns
+  'envoydev/cursor-stack|browser-extension'                     # MV3 browser extensions: ephemeral service worker + storage tiers, typed cross-context messaging, isolated vs MAIN world, least-privilege permissions, CSP-safe UI, WXT tooling, store review + monetization
+  'envoydev/cursor-stack|webpack'                               # webpack 5 library builds: transpile/type-check split (swc + fork-ts-checker + tsc declarations), externals from package.json, tree-shaking preconditions, ESM output state, resolution traps, config factory + cache pitfalls
+  'envoydev/cursor-stack|angular-conventions'                   # Angular 17+/TS house conventions (signals, OnPush, a11y)
+  'envoydev/cursor-stack|angular-testing'                       # Angular testing hub: TestBed/harness patterns, runner routing, exclusion catalog - practices only, the % bar is user-set via project-test-coverage-analyzer
+  'envoydev/cursor-stack|angular-material'                      # Angular Material + CDK: selective imports, M3 theming, CDK primitives, harnesses
+  'envoydev/cursor-stack|angular-styling'                       # Angular CSS/styling: ViewEncapsulation, :host, ::ng-deep ways-out, design tokens, responsive, a11y styling
+  'envoydev/cursor-stack|angular-security'                      # Angular/web frontend security: XSS/DomSanitizer bypass, CSP, CSRF, no-secrets-in-bundle, token storage, SSR/TransferState
+  'envoydev/cursor-stack|frontend'                              # web frontend router: Angular/TS + in-skill design-quality guidance -> mobile
+  'envoydev/cursor-stack|mobile'                                # Ionic/Capacitor router/index over the Angular (angular-conventions) + TypeScript baselines
+  'envoydev/cursor-stack|ionic'                                 # house Ionic/Capacitor conventions: UI, nav, lifecycle, permissions, plugin sourcing + wrapping
+  'envoydev/cursor-stack|capacitor-release'                     # Ionic/Capacitor release pipeline: cap sync/build, iOS+Android signing, store submission, OTA, versioning, CI, symbols
+  'envoydev/cursor-stack|ionic-security'                        # Ionic/Capacitor mobile security: Keychain/Keystore storage, deep-link validation, permissions, cleartext/WebView hardening
+  'envoydev/cursor-stack|csharp'                                # C# house conventions - style, naming, async, logging, DI
+  'envoydev/cursor-stack|csharp-design-patterns'                # all 23 GoF patterns with modern .NET 8+ forms
+  'envoydev/cursor-stack|dotnet'                                # router mapping .NET work areas to specialist skills
+  'envoydev/cursor-stack|dotnet-architecture-tests'             # architecture fitness tests: NetArchTest (default)/ArchUnitNET - layer+dependency+naming+isolation rules as build-failing tests
+  'envoydev/cursor-stack|dotnet-aspire'                         # .NET Aspire local orchestration: AppHost, ServiceDefaults, service discovery, dashboard
+  'envoydev/cursor-stack|dotnet-authentication'                 # ASP.NET Core authn/authz: JWT/OIDC/Identity, policy-based authz, secrets
+  'envoydev/cursor-stack|dotnet-code-quality'                   # C# quality enforcement: CSharpier formatter ownership, SDK analyzers + AnalysisLevel, .editorconfig severity, TreatWarningsAsErrors (+ legacy batch promotion), Roslynator, CI gate
+  'envoydev/cursor-stack|dotnet-console-apps'                   # console-app interface surface: CLI arg parsing (System.CommandLine 2.0/Spectre.Console.Cli/Cocona) + bot-SDK integration (Telegram/Discord/Slack/exchange) in a BackgroundService
+  'envoydev/cursor-stack|dotnet-cryptography'                   # System.Security.Cryptography: SHA-2, AES-GCM, RSA/ECDSA, PBKDF2/Argon2id, constant-time compare
+  'envoydev/cursor-stack|dotnet-web-error-handling'             # Result + ProblemDetails (RFC 9457) + IExceptionHandler + FluentValidation
+  'envoydev/cursor-stack|dotnet-grpc'                           # gRPC: .proto/codegen, ASP.NET Core host, 4 streaming modes, JWT/mTLS, interceptors, health
+  'envoydev/cursor-stack|dotnet-hosted-services'                # worker/background-service host: BackgroundService, ExecuteAsync trap, scoped scope, PeriodicTimer, shutdown, Channels
+  'envoydev/cursor-stack|dotnet-windows-service'                # Windows Service SCM layer: AddWindowsService, budgets, non-zero-exit recovery, sc.exe install, gMSA/hardening, ServiceBase maintenance
+  'envoydev/cursor-stack|dotnet-messaging'                      # event-driven messaging: Wolverine (MIT)/MassTransit, outbox, sagas, RabbitMQ/Azure SB
+  'envoydev/cursor-stack|dotnet-migrate'                        # safe migration workflow: EF schema, .NET upgrades, NuGet - rollback + verify per step
+  'envoydev/cursor-stack|dotnet-minimal-api'                    # minimal API endpoint mechanics: MapGroup, TypedResults, endpoint filters, binding
+  'envoydev/cursor-stack|dotnet-mvc-controllers'                # controller-based Web API: [ApiController], attribute routing, ActionResult<T>, auto-400 filter, action filters, binding
+  'envoydev/cursor-stack|dotnet-openapi'                        # OpenAPI doc (Swashbuckle / built-in .NET 9+) + Scalar docs UI
+  'envoydev/cursor-stack|dotnet-realtime'                       # SignalR real-time: strongly-typed Hub<T>, IHubContext push, groups/presence, reconnection, JWT-over-querystring, Redis/Azure backplane
+  'envoydev/cursor-stack|dotnet-security'                       # OWASP Top 10 (2021) -> .NET 8 mitigations; deprecated-pattern warnings
+  'envoydev/cursor-stack|dotnet-source-generators'              # Roslyn IIncrementalGenerator authoring + built-in generators (GeneratedRegex/LoggerMessage/STJ)
+  'envoydev/cursor-stack|dotnet-testing'                        # .NET test strategy: AAA, per-layer coverage, library routing
+  'envoydev/cursor-stack|dotnet-web-backend'                    # ASP.NET Core cross-cutting: HttpClientFactory, OpenAPI, observability
+  'envoydev/cursor-stack|dotnet-winforms'                       # WinForms conventions: MVP/binding, disposal, GDI leaks, high-DPI, migration
+  'envoydev/cursor-stack|dotnet-wpf'                            # WPF strict-MVVM conventions, bindings, virtualization
+  'envoydev/cursor-stack|postgres'                              # PostgreSQL engine delta: index types, JSONB, SARGability, EXPLAIN, pooling
+  'envoydev/cursor-stack|sqlite'                                # SQLite engine delta: WAL/single-writer, PRAGMAs, type affinity, limited ALTER
+  'envoydev/cursor-stack|dotnet-data-access'                    # EF Core + NHibernate ORM hub (references/): DbContext, tracking, N+1, projection
+  'envoydev/cursor-stack|dotnet-architecture'                   # architecture decision hub (references/): clean/ddd/vsa/modular/microservices
+  'envoydev/cursor-stack|markdown-style'                        # Markdown authoring / review: syntax canon (valid) + house style overlay, two-pass procedure
+  'envoydev/cursor-stack|docs-as-code'                          # docs-as-code authoring: Mermaid sequence/ER diagrams, ADRs (Nygard/MADR 4), C4 views - per-type references/
+  'envoydev/cursor-stack|ilspy-decompile'                       # decompile a .NET assembly (ilspycmd via dnx) to read real API/behavior - framework internals, NuGet source, pre-upgrade checks
+  'envoydev/cursor-stack|dotnet-project-setup'                  # .NET solution build spine (hub, references/): src/tests layout, .slnx, Directory.Build.props, global.json, central package management, dotnet-tool pinning
+  'envoydev/cursor-stack|dotnet-performance'                    # perf-aware .NET design (hub, references/): allocation/type design (struct vs class, Span, ValueTask) + serialization-format choice (STJ source-gen / Protobuf / MessagePack)
+  'envoydev/cursor-stack|dotnet-diagnostics'                    # measure/diagnose a live .NET process (hub, references/): BenchmarkDotNet microbenchmarks + crash/hang/OOM dump capture & first-look SOS analysis
+  'envoydev/cursor-stack|nx'                                    # Nx monorepo: project-graph nav + 'nx affected' scoping, generators, module-boundary tags; CLI over MCP; serena-vs-nx routing
 )
 
 # (3) MCP servers "name|args"; scope follows $Scope. SINGLE-QUOTED so the ${...} shared-baseline
@@ -385,45 +395,50 @@ $CursorRules = @(
 # superpowers is an optional /add-plugin (methods referenced 'if installed'), and auto-delegation cannot be
 # hard-disabled at the agent level. Bodies lean on the auto-attaching .cursor/rules + installed skills.
 $CursorAgents = @(
-  # Build/test resolvers (readonly false - they edit to restore green)
-  'dotnet-build-error-resolver.md'   # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped
-  'dotnet-test-failure-resolver.md'  # implement phase: dotnet test -> red->green repair loop, anti-reward-hacking guard, capped
-  'ng-build-error-resolver.md'       # implement phase: ng build -> minimal fix loop (serena/LSP), capped
-  'angular-test-resolver.md'         # implement phase: ng test/Jest -> red->green repair loop, anti-reward-hacking, capped
-  # Per-domain solution designers (readonly - decompose a feature into contracted tasks)
-  'aspnet-solution-designer.md'      # ASP.NET Core backend/API design + task decomposition
-  'angular-solution-designer.md'     # Angular frontend design + task decomposition
-  'wpf-solution-designer.md'         # WPF desktop design + task decomposition
-  'console-solution-designer.md'     # headless Generic-Host worker/bot/CLI design + task decomposition
-  'mobile-solution-designer.md'      # Capacitor/Ionic mobile design + task decomposition
-  'data-solution-designer.md'        # SQL schema/migration/index design + task decomposition
-  'devops-solution-designer.md'      # CI/CD pipeline design + task decomposition
-  # Per-domain implementers (readonly false - build ONE task, code + tests)
-  'aspnet-implementer.md'            # build one ASP.NET Core backend/API task to contract
-  'angular-implementer.md'           # build one Angular task to contract
-  'wpf-implementer.md'               # build one WPF task to contract
-  'console-implementer.md'           # build one console/worker task to contract
-  'mobile-implementer.md'            # build one Capacitor/Ionic task to contract
-  'data-implementer.md'              # build one SQL schema/migration task to contract
-  'devops-implementer.md'            # build one CI/CD task to contract
-  # Per-domain verifiers (readonly - gate the assembled build vs plan + quality, punch-list loop)
-  'aspnet-verifier.md'               # gate assembled ASP.NET Core work
-  'angular-verifier.md'              # gate assembled Angular work
-  'wpf-verifier.md'                  # gate assembled WPF work
-  'console-verifier.md'              # gate assembled console/worker work
-  'mobile-verifier.md'               # gate assembled Capacitor/Ionic work
-  'data-verifier.md'                 # gate assembled SQL schema/migration work
-  'devops-verifier.md'               # gate assembled CI/CD work
-  # Cross-cutting (readonly - diagnose / audit / final gate)
-  'issue-diagnoser.md'               # read-only local-runtime bug diagnosis -> root cause + fix plan; dispatches evidence-gatherer
-  'ci-failure-diagnoser.md'          # read-only red-CI diagnosis via gh -> categorize + route; dispatches evidence-gatherer
-  'security-auditor.md'              # read-only cross-stack OWASP/CWE security posture audit
-  'integration-reviewer.md'          # read-only cross-domain final gate before commit
-  # Read-only support seats (dispatched by a diagnoser or a capture skill via the Task tool)
-  'evidence-gatherer.md'             # read-only: reproduce/confirm + return a compact digest (the diagnosers dispatch it)
-  'code-analyzer.md'                 # read-only per-module characterizer (the project-architecture-analyzer skill fans it out)
-  'code-style-analyzer.md'           # read-only per-language style characterizer (the project-code-style-analyzer skill fans it out)
-  'related-project-analyzer.md'      # read-only sibling-repo characterizer (the project-related-context skill fans it out)
+  'dotnet-build-error-resolver.md'              # implement phase: dotnet build -> categorize errors -> minimal fix loop (serena/LSP), capped
+  'dotnet-test-failure-resolver.md'             # implement phase: dotnet test -> red->green repair loop, anti-reward-hacking guard, capped
+  'ng-build-error-resolver.md'                  # implement phase: ng build -> minimal fix loop (serena/LSP), capped
+  'angular-test-resolver.md'                    # implement phase: ng test/Jest -> red->green repair loop, anti-reward-hacking, capped
+  'architecture-analyzer.md'                    # analysis support: read-only per-module characterizer (purpose/surface/deps/patterns/smells) - the architecture + test-coverage captures fan it out, also independently callable
+  'test-coverage-analyzer.md'                   # analysis phase: read-only per-surface coverage characterizer - the project-test-coverage-analyzer skill fans it out over the raw results; never runs the suite
+  'code-style-analyzer.md'                      # analysis phase: read-only per-language style characterizer - the project-code-style-analyzer skill fans it out per language and merges docs/PROJECT-CODE-STYLE.md + the inject-code-style hook from its structured reports
+  'related-project-analyzer.md'                 # analysis support: read-only sibling-repo characterizer (name/relation/first_read/seam, URL siblings shallow-cloned to scratch) - the project-related-context skill fans it out per sibling and merges docs/related-context/PROJECT-RELATED-CONTEXT.md
+  'ci-failure-diagnoser.md'                     # analysis phase: read-only CI red-run diagnosis via gh - categorize, local repro, route
+  'runtime-failure-diagnoser.md'                # analysis phase: read-only bug diagnosis from logs/errors/screenshots - root cause + route, no fix
+  'evidence-gatherer.md'                        # diagnosis support: read-only - a diagnoser dispatches it to reproduce/confirm and return a compact digest, keeping log volume off the opus seat
+  'security-auditor.md'                         # analysis phase: read-only cross-stack security posture audit - OWASP/CWE punch-list routed to implementers, complements /review
+  'integration-reviewer.md'                     # final gate: read-only cross-domain integration review - contract consistency, assembled build/test/migration, the commit gate no single-stack verifier is
+  # Per-domain specialist team (10 stacks x designer/implementer/verifier) + architect analysis agents above; model/effort pinned in frontmatter
+  'aspnet-solution-designer.md'                 # design phase: ASP.NET Core architecture + plan + test strategy, decomposes into parallel tasks
+  'aspnet-implementer.md'                       # build phase: builds one ASP.NET task - code + tests
+  'aspnet-verifier.md'                          # verify phase: gates the ASP.NET build vs plan + quality, punch-list back
+  'web-angular-solution-designer.md'            # design phase: Angular architecture + plan + test strategy, decomposes
+  'web-angular-implementer.md'                  # build phase: builds one Angular task - code + tests
+  'web-angular-verifier.md'                     # verify phase: gates the Angular build vs plan + quality
+  'wpf-solution-designer.md'                    # design phase: WPF strict-MVVM architecture + plan + test strategy, decomposes
+  'wpf-implementer.md'                          # build phase: builds one WPF task - code + tests
+  'wpf-verifier.md'                             # verify phase: gates the WPF build vs plan + quality
+  'console-solution-designer.md'                # design phase: headless .NET (Generic Host worker/bot/daemon/CLI) architecture + plan + test strategy, decomposes
+  'console-implementer.md'                      # build phase: builds one console/worker task - code + tests
+  'console-verifier.md'                         # verify phase: gates the console/worker build vs plan + quality
+  'ionic-angular-solution-designer.md'          # design phase: Ionic/Capacitor architecture + plan + test strategy, decomposes
+  'ionic-angular-implementer.md'                # build phase: builds one mobile task - code + tests
+  'ionic-angular-verifier.md'                   # verify phase: gates the mobile build vs plan + quality
+  'data-solution-designer.md'                   # design phase: schema/data-model architecture + plan + test strategy, decomposes
+  'data-implementer.md'                         # build phase: builds one data task - SQL + migration tests
+  'data-verifier.md'                            # verify phase: gates the data build vs plan + quality
+  'devops-solution-designer.md'                 # design phase: Docker/CI/CD/deploy architecture + plan + validation strategy, decomposes
+  'devops-implementer.md'                       # build phase: builds one devops task - Dockerfile/workflow/deploy + local validation
+  'devops-verifier.md'                          # verify phase: gates the devops build vs plan + quality
+  'browser-extension-solution-designer.md'      # design phase: MV3 extension architecture (SW/content/UI topology, message contract, permissions) + plan + test strategy, decomposes
+  'browser-extension-implementer.md'            # build phase: builds one extension task - code + tests
+  'browser-extension-verifier.md'               # verify phase: gates the extension build vs plan + quality
+  'windows-service-solution-designer.md'        # design phase: SCM recovery/budget/identity topology + plan + test strategy, decomposes
+  'windows-service-implementer.md'              # build phase: builds one Windows Service task - code + tests
+  'windows-service-verifier.md'                 # verify phase: gates the Windows Service build vs plan + quality
+  'winforms-solution-designer.md'               # design phase: WinForms MVP seam / binding / disposal topology + plan + test strategy, decomposes
+  'winforms-implementer.md'                     # build phase: builds one WinForms task - code + tests
+  'winforms-verifier.md'                        # verify phase: gates the WinForms build vs plan + quality
 )
 
 function Get-RepoRoot {

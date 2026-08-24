@@ -5,7 +5,7 @@ description: ".NET hosted-service and worker conventions - the long-running back
 
 # .NET hosted services - background work on the generic host
 
-This skill owns the host a long-running task runs inside: how the work is registered, which base type to derive from, what happens when it throws, how it reaches a scoped dependency, how it loops, and how it stops cleanly. It stops at the host boundary. When the work is *driven by a broker* - a queue consumer, an outbox relay, a saga - the delivery contract, idempotency, and retry policy are `dotnet-messaging`; this skill only owns the host process those consumers happen to live in. The HTTP service around an in-process background task is `dotnet-web-backend`. The async, `Task`, and `Channel<T>` language mechanics are `csharp`. Concurrency correctness for a worker loop - awaiting without deadlock, threading a cancellation token to the leaves, `SemaphoreSlim` / `Interlocked` for shared state, and bounded parallelism - is `references/concurrency.md`. Floor is .NET 8 / C# 12; anything newer is marked optional.
+This skill owns the host a long-running task runs inside: how the work is registered, which base type to derive from, what happens when it throws, how it reaches a scoped dependency, how it loops, and how it stops cleanly. It stops at the host boundary. When the work is *driven by a broker* - a queue consumer, an outbox relay, a saga - the delivery contract, idempotency, and retry policy are `dotnet-messaging`; this skill only owns the host process those consumers happen to live in. The HTTP service around an in-process background task is `dotnet-web-backend`. The general concurrency mechanics - awaiting without deadlock, cancellation threading, `SemaphoreSlim` / `Interlocked`, `Channel<T>` basics, bounded parallelism - are `csharp`'s `references/concurrency.md`; what the worker loop adds on top is this skill's `references/concurrency.md`. Floor is .NET 8 / C# 12; anything newer is marked optional.
 
 ## The two host shapes
 
@@ -33,9 +33,7 @@ Both register an `IHostedService` in the DI container; the host starts every reg
 
 ## Hosting as a Windows Service
 
-A worker that runs under the Windows Service Control Manager (SCM) is the same worker binary plus the `Microsoft.Extensions.Hosting.WindowsServices` package and one call - `builder.Services.AddWindowsService(o => o.ServiceName = "...")`. It is a third way into the one hosting model, not a different model: everything above - base type, the exception trap, scoping, shutdown - applies unchanged. The call is context-aware, installing the `WindowsServiceLifetime` only when the process is actually running under the SCM (`WindowsServiceHelpers.IsWindowsService()`), so the identical binary still runs as a plain console app for local debugging - no separate build. It also points the host content root at `AppContext.BaseDirectory` and wires the Event Log provider. The legacy `ServiceBase`/`OnStart`/`installutil` pattern is obsolete for new work.
-
-The SCM-specific hardening - resolving every path against `AppContext.BaseDirectory` (the SCM working directory is System32), exiting non-zero so a fault actually triggers SCM recovery, and least-privilege service accounts - is in `references/deployment-and-observability.md` (Service-manager integration).
+A worker that runs under the Windows Service Control Manager is the same worker binary - this one hosting model, unchanged. Everything SCM: `AddWindowsService` and the dual-mode binary, start/stop budgets, non-zero exits so recovery actions fire, the System32 working-directory trap, install/accounts/hardening, and the legacy `ServiceBase` maintenance shape - is the `dotnet-windows-service` skill; load it WITH this one whenever the worker targets the SCM.
 
 ## Which base type: IHostedService, BackgroundService, IHostedLifecycleService
 
@@ -149,7 +147,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 }
 ```
 
-Prefer a **bounded** channel so a runaway producer applies backpressure instead of growing the queue until the process runs out of memory. `ReadAllAsync` with the stopping token drains until shutdown. The channel mechanics - readers, writers, completion, backpressure modes - are `csharp`; this skill only fixes that an in-process producer/consumer split belongs on a channel drained by a hosted service. The hard boundary: this is for work that stays inside one process. The moment the work must survive a restart, cross a process boundary, or be delivered at-least-once, it is not a channel - it is a broker, and that is `dotnet-messaging`. Do not build a durability story on top of an in-memory channel.
+Prefer a **bounded** channel so a runaway producer applies backpressure instead of growing the queue until the process runs out of memory. `ReadAllAsync` with the stopping token drains until shutdown. The channel mechanics - readers, writers, completion, backpressure modes - are `csharp`'s `references/concurrency.md`; this skill only fixes that an in-process producer/consumer split belongs on a channel drained by a hosted service. The hard boundary: this is for work that stays inside one process. The moment the work must survive a restart, cross a process boundary, or be delivered at-least-once, it is not a channel - it is a broker, and that is `dotnet-messaging`. Do not build a durability story on top of an in-memory channel.
 
 ## Running it 24/7 - the references
 

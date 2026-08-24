@@ -11,11 +11,11 @@ is green. The dispatched seat absorbs the repeated build/test output and returns
 which is the whole point: the red loop's noise stays out of this context.
 
 A resolver that stops as BLOCKED_CONTRACT_CHANGE hit a fix needing a shared-contract change -
-outside its bounded scope by design; route it through `project-task-flow`, never edit the contract
+outside its bounded scope by design; route it through `project-solve-cross-task`, never edit the contract
 to go green.
 
 A seat with no dispatch tool (an implementer or a resolver) does NOT delegate - this routing policy
-is the orchestrator's, owned by `project-task-flow`; run your own bounded fix loop and report the red
+is the orchestrator's, owned by `project-solve-cross-task`; run your own bounded fix loop and report the red
 per your cap. A diagnoser can dispatch, but its one sanctioned dispatch is the evidence-gatherer: it
 names the resolver in its report, never dispatches one.
 

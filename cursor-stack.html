@@ -296,7 +296,7 @@ const hooksRules = [
 // ---- Subagents (Cursor-native; fetched into .cursor/agents/) ----
 // [name, area, lands in, source url, description]. 33 agents. Cursor (2.5+) has a Task tool and
 // subagents that inherit the parent's MCP servers, so the roster carries the full orchestration:
-// project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch
+// project-solve-cross-task fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch
 // evidence-gatherer, and the serena-memory handoff works. Cursor's platform limits shape the contract:
 // model:inherit (no reliable effort/model tiering), no per-tool `tools:` allowlist (only `readonly`),
 // superpowers optional via /add-plugin, and no hard-disable of auto-delegation. The agents lean on the
@@ -429,7 +429,7 @@ function renderHooks(filtered) {
 }
 
 function renderAgents(filtered) {
-  let html = `<h2>Subagents</h2><div class="group-meta">Cursor-native specialist subagents, fetched into the project's <code>.cursor/agents/</code> tree. Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so the roster carries the full orchestration: <code>project-task-flow</code> fans out designer/implementer/verifier, the diagnosers dispatch <code>evidence-gatherer</code>, and the serena-memory handoff works. Cursor's platform limits shape the contract (a <code>readonly</code> bool rather than a per-tool allowlist, <code>model: inherit</code> - no reliable effort/model tiering, superpowers optional via <code>/add-plugin</code>). ${filtered.length} agents.</div>`;
+  let html = `<h2>Subagents</h2><div class="group-meta">Cursor-native specialist subagents, fetched into the project's <code>.cursor/agents/</code> tree. Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so the roster carries the full orchestration: <code>project-solve-cross-task</code> fans out designer/implementer/verifier, the diagnosers dispatch <code>evidence-gatherer</code>, and the serena-memory handoff works. Cursor's platform limits shape the contract (a <code>readonly</code> bool rather than a per-tool allowlist, <code>model: inherit</code> - no reliable effort/model tiering, superpowers optional via <code>/add-plugin</code>). ${filtered.length} agents.</div>`;
   const rows = filtered;
   // All agents share the same 'lands in' and source; lift whatever is uniform into
   // the header so it does not repeat down a column and squeeze the description.

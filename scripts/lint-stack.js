@@ -119,6 +119,7 @@ const NON_SKILL_TOKENS = new Set([
     "chrome-types",                       // Chrome extension typings package
     "vitest-axe",                         // a11y test package
     "guard-ungated-commit",               // installed hook script, not a skill
+    "user-run",                            // template label for a slash-only capture, not a skill
 ]);
 
 const findings = [];

@@ -110,7 +110,10 @@ jobs:
           echo "agents=$agents rules=$rules hooks=$hooks copied=$(grep -c 'copied ->' run.log)"
           test "$agents" = "$(awk '/^CURSOR_AGENTS=\(/,/^\)/' "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
           test "$rules"  = "$(awk '/^CURSOR_RULES=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
-          test "$hooks"  = "$(awk '/^CURSOR_HOOKS=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | grep -c '^  "')"
+          # Hooks count DISTINCT files, not manifest lines: a hook wired to two events is listed
+          # once per event but copied once (guard-read-whole-file is on beforeReadFile and
+          # beforeShellExecution), so a line count would over-expect and go red on a correct tree.
+          test "$hooks"  = "$(awk '/^CURSOR_HOOKS=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | sed -n 's/^  "\([^:"]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
 
           # The stamp must name the commit actually installed - not a stale or invented one.
           grep -q "^source_commit=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)$" "$proj/.cursor/cursor-stack.stamp"

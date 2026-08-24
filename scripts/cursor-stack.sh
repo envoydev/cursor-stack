@@ -363,7 +363,7 @@ CURSOR_RULES=(
 # (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's
 # source clone (agents/) on BOTH actions
 # (per-agent fail-soft - an agent not yet upstream keeps any existing local copy). Cursor auto-discovers
-# .cursor/agents/*.md; no settings wiring needed. All 33 subagents. Cursor (2.5+) has a Task tool and
+# .cursor/agents/*.md; no settings wiring needed. All 43 subagents. Cursor (2.5+) has a Task tool and
 # subagents that inherit the parent's MCP servers, so the roster carries the FULL orchestration -
 # project-task-flow fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch
 # evidence-gatherer, and the serena-memory handoff works (MCP is inherited). Cursor's platform limits

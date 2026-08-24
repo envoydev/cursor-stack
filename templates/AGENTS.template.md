@@ -1,163 +1,72 @@
 # AGENTS.md (stack-neutral template)
 
-Copy this into a new project's `AGENTS.md` and fill the `<placeholders>`. It is the language- and
-framework-neutral skeleton of the Cursor base: the Cursor-mechanism routing plus the per-project
-structure, with every stack-specific detail (house-style skills, convention rules, secret-file globs,
-the per-language LSP extension) left blank for you to complete. The cross-cutting engineering
-conventions themselves live in the always-on `baseline-*.mdc` rules, not here. Cursor injects `AGENTS.md`
-(and matching `.cursor/rules`) into model context, so keep it lean and high-signal - the skills' and
-rules' own descriptions already cover a lot; this file adds only what they do not surface, and routes
-work by a concrete, observable trigger (an artifact, a command, a checkpoint), never a vibe. Project
-specifics go under `## Per-project additions`.
+<!-- Fill-in block - delete once done. Copy this file into a new project as AGENTS.md at the repo
+     root, where Cursor reads it automatically. It is a normal committed file - nothing to unignore.
+     Then:
+1. Write the project top from the authoring outline in the comment below - replace the H1 title
+   with the project's own name, put the intro above ## Rules - then delete that comment.
+2. Trim the ## Rules table to what the installer actually laid down - and drop any GENERATED
+   row whose capture skill this install skipped (its /command will not resolve).
+3. Run the captures that write the rows marked GENERATED: /project-agent-capabilities,
+   /project-architecture-analyzer, /project-code-style-analyzer - plus /project-related-context
+   ONLY when this project has sibling repos (a standalone repo drops that row instead). They are
+   slash-only (`disable-model-invocation`): the user types them, and a model invocation is refused.
+This file is injected every session and into subagents - keep it lean and route work by an
+observable trigger (an artifact, a command, a checkpoint). The cross-project working conventions
+are NOT here: they load from the always-on baseline rules in .cursor/rules/ (installer-managed,
+refreshed on update) - never restate them in this file, and never paste a rule's contents in
+either: the rules load on their own, so a copy is paid for twice. (HTML comment: stripped from
+injection, so an unfilled template pays nothing for this block.) -->
 
-> **Filling in the placeholders - do this before it becomes the project's `AGENTS.md`.** Every
-> `<placeholder>` is a prompt, not literal text: replace each with what this project *actually* has,
-> and trim the inventories to match (drop rows that don't apply, add ones that do). Investigate the
-> project first, then fill:
-> - **Skills** - what's installed (the `.cursor/skills/` dir, agentskills.io) and which house-style skill
->   governs which file type -> the *House-style skills* table.
-> - **MCP servers** - what's registered (the repo's `.cursor/mcp.json`) -> the *MCP servers* table.
-> - **Rules** - which `.cursor/rules/*.mdc` carry the per-file-type conventions -> the *Convention rules* table.
-> - **Plugins** - Cursor has no `/plugin install`; "plugin" capability is MCPs / native features (Skills,
->   Bugbot, Rules) / Open-VSX extensions, plus any `/add-plugin` ones (e.g. superpowers). Reflect what is in use.
->
-> Replace the H1 title with the project's own name - the '(stack-neutral template)' banner is this
-> file's, not the project's, and carries no `<placeholder>` to catch it.
->
-> Leave no `<placeholder>` behind; if a whole section does not apply to this project, delete it.
+## Rules
 
-## How to work here
+The always-on baseline set in `.cursor/rules/` - one concern per file, all loaded every session;
+this table maps where each behavior rule lives (the detail is in the rules, not here). Glob-scoped
+rules in the same directory attach on a matching file touch - their own `globs:` frontmatter says
+when. In GENERATED rows, `user-run` marks a slash-only capture (`disable-model-invocation`): only
+the user can invoke it, so name the command to the user rather than running it.
 
-The cross-cutting engineering conventions - communication style, adversarial review of your
-proposals, planning/execution thresholds, code quality, the definition-of-done gate, security, git
-and pull requests, and code navigation - are the always-on `baseline-*.mdc` rules in `.cursor/rules/`
-(`baseline-interaction.mdc`, `baseline-quality-gates.mdc`, `baseline-security.mdc`, `baseline-git.mdc`,
-`baseline-navigation.mdc`). The stack installs and refreshes them and Cursor loads them every turn
-(`alwaysApply: true`), so they are NOT restated here. This file carries only the Cursor-mechanism
-routing below and the per-project structure under `## Per-project additions`.
-
-## Skills, rules, hooks and MCPs
-
-How routing works, and the rules that matter most:
-
-- **The trigger is an artifact, a task shape, or a checkpoint - never a vibe.** Load a skill for the *work* (a file you're about to edit, a command you're about to run, a diff you're about to show), not to answer a question or explain. Over-loading a simple turn is the failure to avoid.
-- **Match the mechanism to the job, one home per piece, no duplication.** A deterministic gate at a discrete event → a Cursor hook (`.cursor/hooks.json`). Per-file-type conventions → a glob-scoped `.cursor/rules/*.mdc` rule (auto-attaches by glob). An always-on cross-cutting convention → an `alwaysApply` `baseline-*.mdc` rule. A keyword-fired capability → the skill's own description. Project-specific structure → this file. Never state one trigger in two places.
-- **Skill and rule descriptions auto-attach.** Route here only what they do not already make obvious.
-
-### House-style skills (Cursor Skills)
-
-No inventory here - house-style skills under `.cursor/skills/` auto-activate on their own keywords / file types and carry their own descriptions. Wire each convention-governed one to a `.cursor/rules/*.mdc` (Convention rules below), and name the set under `## Per-project additions`.
-
-### Convention rules
-
-For each convention-governed file type, add a `.cursor/rules/*.mdc` with a `globs` frontmatter so it
-**auto-attaches** when a matching file is in context - guidance pointing at the matching house-style
-skill, not a hard block. Replace the rows:
-
-| Rule | File types → skill |
+| Rule | What it governs |
 |---|---|
-| `<language>-conventions.mdc` | `<file globs>` → `<house-style-skill>` |
-| `<framework>-conventions.mdc` | `<framework file globs>` → `<framework-skill>` |
+| `.cursor/rules/baseline-interaction.mdc` | communication style, adversarial review of user proposals, formatting + privacy, planning/execution thresholds |
+| `.cursor/rules/baseline-quality-gates.mdc` | code-quality bars and the done-claim verification gate |
+| `.cursor/rules/baseline-security.mdc` | `/review` routing, PII/secret handling, the `.cursorignore` caveat |
+| `.cursor/rules/baseline-git.mdc` | commits, branches, PRs, push discipline, the pre-commit checkpoint |
+| `.cursor/rules/baseline-navigation.mdc` | symbol-lookup and code-reading discipline |
+| `.cursor/rules/baseline-docs-root.mdc` | the generated-docs root - the installer-stamped path `<docs-path>` resolves to, what lives under it, the capture-doc lifecycle |
+| `.cursor/rules/ponytail.mdc` | minimal-code discipline - the simplest solution that actually works |
+| `.cursor/rules/baseline-project-agent-capabilities.mdc` (GENERATED - user-run /project-agent-capabilities after install, update, or a trim) | the usage policy plus this project's real skill / seat / MCP inventory |
+| `.cursor/rules/baseline-project-architecture.mdc` (GENERATED - user-run /project-architecture-analyzer) | architecture awareness - the micro-summary plus the read-the-map trigger into `<docs-path>/architecture/` |
+| `.cursor/rules/baseline-project-related-context.mdc` (GENERATED, OPTIONAL - only where the project has sibling repos; user-run /project-related-context with their paths/URLs, else delete this row) | sibling-repo awareness - name / location / relation / seam per sibling |
+| `.cursor/rules/project-code-style.mdc` (GENERATED - user-run /project-code-style-analyzer; glob-scoped, plus the full doc) | the project's actual code style - the condensed core auto-attaches on any matching file touch (main session and subagents); the full capture stays in `<docs-path>/PROJECT-CODE-STYLE.md` |
 
-### Stack hooks
+<!-- Authoring outline - write these sections into the project-specific top of this file
+(each section lean; interleave as reads best - the project intro usually comes first, above
+## Rules), then delete this comment block. Comments are stripped from injection, so this
+outline costs nothing even while it sits here.
 
-Two `beforeShellExecution` guards live in `.cursor/hooks/`, wired in `.cursor/hooks.json`, each blocking its own case: the protected-branch guard (`guard-protected-force-push.js`) and the catastrophic-rm guard (`guard-catastrophic-rm.js`). Add a new deterministic gate as a Cursor hook there, not as prose.
+Project - what it is:
 
-### Other routing
+1. What this project is - one paragraph: domain, shape (binary / service / library), persistence, surfaces.
+2. Architecture - layers / modules, dependency rules, folder organization.
+3. Key patterns - the non-obvious in-house patterns a newcomer would trip on.
+4. Operational notes - runtime constraints and gotchas that shape code decisions.
+5. Cross-cutting checklists - for each change that must move several files in lockstep, the full touch-point list.
 
-- **Any `.md`** (README, ADR, runbook) - authoring or restructuring → `markdown-style`. Skip one-line tweaks.
-- **Security review** of a sensitive diff → **Bugbot** (`/review`), per the Security rules above.
+Stack - what it is built with:
 
-### MCP servers
-
-| Server | Use for |
-|---|---|
-| `serena` | primary symbol navigator + symbol-level *editor* - `find_symbol` / `find_referencing_symbols` / symbol edits *before* `Read`-ing a whole file to locate a symbol; default over grep and whole-file Read. Runs with `--context ide-assistant` and `--project-from-cwd`, so it self-activates on launch - no `activate_project` call needed; the relative `SERENA_HOME` assumes cwd is the project root. serena also holds this project's **local memory** (`.serena/memories/`, name-addressed and gitignored): the installed subagents use it as their hand-off bus - a seat `write_memory`s a compact note named `<feature>__<contract_version>__<seat>` at hand-off and the next `read_memory`s it by name, staying local to this project. |
-| `context7` | up-to-date library / framework / SDK docs. **Before writing or changing code against any code you don't own** - any third-party package, vendor SDK, or standard-library / framework API whose behavior or signatures are version-sensitive (not just the few you use most) - resolve + query `context7` first; don't answer library-API questions from recall, even when confident. Packages this file names elsewhere are examples, not the whole set - the rule is the *category* (third-party API surface), not a fixed list. Skipping it is *silent* (no error, unlike a wrong symbol), so it's a discipline, not a reflex. Hand-written API code only - generated code (scaffolds, migrations, codegen output) doesn't count. |
-| `memory` | *cross-project* recall and dynamic cross-repo findings - **active in the baseline**; the per-project subagent hand-off runs on serena's local memory (above), not here, so comment this out in a standalone project. Search when this project's context is thin and store a significant cross-project outcome at task end (decision / gotcha / architecture, + project & date). Its SQLite DB is shared across projects *and* accounts by design (one store under `$HOME`) - the lone cross-project store, every other server here is per-project. |
-| `playwright` | drive a browser for visual checks / large HTML reports - don't text-read them |
-| `<framework>-cli` (framework-gated; `angular-cli` in the Angular baseline) | the framework CLI's own docs / commands - shipped active in the Angular stack, commented out where the project isn't that framework. A framework-specific complement to `context7`, which stays the generic-docs route. |
-
-Two further MCPs ship commented-out as opt-in - `chrome-devtools` (browser / extension debug) and
-`appium-mcp` (native mobile E2E); uncomment per project. Name any other MCP the project adds under
-`## Per-project additions`.
-
-Adjacent but not an MCP: the editor's **`LSP`** - built-in TypeScript, plus an Open-VSX extension per
-language (`<language LSP extension>`; on C# use a Roslyn-based extension - Microsoft's C# Dev Kit is
-blocked in Cursor). An LSP gives compiler-accurate intelligence: inline diagnostics, go-to-definition,
-find-references, resolved types. It **complements** serena and does **not** edit; serena stays the
-default navigator, symbol editor, and local memory.
-
-The never-`Read`-a-whole-file-to-locate-a-symbol hard rule is the always-on `baseline-navigation.mdc`
-rule; serena (`find_symbol` / `find_referencing_symbols`) or the `LSP` is the locator, `Read` is for
-code you have *already* located. Name the enabled LSP extension(s) under `## Per-project additions`.
-
-## Generated docs root
-
-**Any documentation a skill or agent generates lives under a single docs root, `docs/` by default** -
-the architecture map (`architecture/`), `PROJECT-CODE-STYLE.md`, `PROJECT-RELATED-CONTEXT.md`, the
-quality-loop prompts (`loops/`), superpowers plans/specs, and any other generated markdown. This is
-the default home for generated project docs; a first-class repo doc with a conventional home (the
-top-level `README.md`, ADRs where the project keeps them) stays where it belongs. To relocate the
-generated docs, set the root here:
-
-- **Docs root:** `docs/`
-
-Wherever a skill or agent instruction names a generated project doc as `docs/<name>` (for example
-`docs/architecture/ARCHITECTURE.md`), resolve it under the configured root instead. Relocating to
-`.cursor/docs/` makes the docs machine-local (`.cursor/` is gitignored, so nothing there is
-committed or reaches a teammate) - keep the root under a committed path (the `docs/` default)
-unless you specifically want them machine-local.
-
-Superpowers (when installed) writes its implementation plans and design specs under this root too -
-`<root>/superpowers/plans/` and `<root>/superpowers/specs/` - so they are committed alongside the
-other project docs, not left as local scratch. Track them: do NOT gitignore `docs/superpowers/`.
-
-## Related projects
-
-When this repo is one of several that make up a product (a backend and its frontend, an app and a
-package it consumes, peer services), list the siblings here so an investigation can cross the seam.
-This static graph is the cross-project *structure* - it lives here in `AGENTS.md` (committed, loaded
-every session), never in the `memory` MCP; `memory` carries only the *dynamic* cross-repo findings
-on top. Keep each entry to the awareness minimum - name, location, relation, one seam line;
-describe *edges* (relationships), not roles, so any topology fits:
-
-```yaml
-related_projects:
-  - name:     <sibling name>
-    location: <path or git URL>              # how to find it
-    relation: consumes | provides-to | peer | depends-on | embeds   # this repo's edge to it
-    seam:     <the shared surface a change here can break there - an API spec, a package's public surface, shared types>
-```
-
-- **Detail lives in `docs/PROJECT-RELATED-CONTEXT.md`, from the start.** What to read first to orient in a
-  sibling (its `AGENTS.md` / `CLAUDE.md`, then `README.md`), what sends you there, interface
-  elaboration - all of it goes in that committed file (tracked, never gitignored, so it travels with
-  the repo), read on demand when a task touches a seam. The entries above must stay in `AGENTS.md` -
-  always loaded, they are what makes the agent aware the siblings exist.
-- **Navigation stays per-repo.** serena binds to *this* repo; you can `Read` / `Grep` a sibling's
-  files directly, but real serena symbol-navigation of a sibling happens in a context rooted in that
-  sibling, never cross-navigated from here.
-- **Dynamic findings go to `memory`.** A cross-repo outcome ('the contract moved to v3, endpoint X
-  must change') is stored in the `memory` MCP (product-scoped via `MCP_MEMORY_SQLITE_PATH`), not here.
-
-## Per-project additions
-
-A project's `AGENTS.md` is this base plus a project-specific top. Add, in roughly this order, keeping
-each section lean (the skill and rule descriptions carry the rest):
-
-1. **What this project is** - one paragraph: domain, shape (binary / service / library), persistence, surfaces.
-2. **Stack** - languages, frameworks, key libraries, test stack + coverage gate, plus the per-language LSP extension (built-in TS; a Roslyn C# extension) for compiler-exact navigation + diagnostics.
-3. **Commands** - copy-pasteable build / test / run / migrate / publish, with any environment quirks.
-4. **Architecture** - layers / modules, dependency rules, folder organization.
-5. **Key patterns** - the non-obvious in-house patterns a newcomer would trip on.
-6. **Secrets + config** - where this project keeps its secrets and env config (the globs).
-   The always-on `baseline-security.mdc` rule says never to read or echo `.env*`, `*.pem`,
-   `*.key` "and whatever config files the stack keeps secrets in" - this is the blank that
-   fills. Naming them here IS the mechanism: Cursor has no deny-list to mirror them into, so
-   an unnamed secret file is one the rule cannot point at.
-7. **Code conventions** - the house-style skill for each file type; add a globbed `.cursor/rules/*.mdc` so it auto-attaches.
-8. **Testing approach** - per-layer strategy, what's excluded, the integration / regression net.
-9. **Load by artifact** - a table mapping this repo's concrete files / types / constructs to the third-party skills it can't re-describe (house-style skills self-fire, so they're not in it).
-10. **Operational notes** - runtime constraints and gotchas that shape code decisions.
-11. **Cross-cutting checklists** - for each change that must move several files in lockstep, the full touch-point list.
+6. Stack - languages, frameworks, key libraries, test stack + coverage gate, and the Open-VSX
+   language-server extension for the primary language(s). Cursor has no /plugin install: language
+   diagnostics come from extensions (on C# use a Roslyn-based one - Microsoft's C# Dev Kit is
+   blocked here), and other capability from MCP servers or Cursor natives. MCP routing is NOT
+   hand-filled here - it lives in the generated
+   .cursor/rules/baseline-project-agent-capabilities.mdc (user-run /project-agent-capabilities; if
+   that skill was not installed, a lean hand-filled routing list here is the fallback).
+7. Commands - copy-pasteable build / test / run / migrate / publish, with any environment quirks.
+8. Secrets + config - where this project's secrets / env config live (the globs); mirror them into
+   .cursorignore so they never reach the model - the stack expects only the generic .env* / key /
+   cert shapes, never this project's own paths.
+9. Code conventions - the house-style skill for each file type (auto-attached by the glob-scoped rules above).
+10. Testing approach - per-layer strategy, what's excluded, the integration / regression net.
+11. Load by artifact - a table mapping this repo's concrete files / types / constructs to the third-party skills it can't re-describe (house-style skills self-fire, so they're not in it).
+-->

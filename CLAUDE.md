@@ -24,10 +24,11 @@ Invariants).
   repo-level skills: the skill loads only on an explicit `/name`).
 - `agents/` - the 43 Cursor-contract subagents, copied into a project's `.cursor/agents/`.
   Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so they keep the full orchestration
-  (`project-task-flow` fans out designer -> implementer -> verifier, the diagnosers dispatch
+  (`project-solve-cross-task` fans out designer -> implementer -> verifier, the diagnosers dispatch
   `evidence-gatherer`, the serena-memory handoff works). Cursor's platform limits shape the
   contract: `model: inherit` (no reliable model/effort pin), no per-tool `tools:` allowlist (only
-  a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of
+  a `readonly` bool), no frontmatter `skills:` preload (each seat is told to READ the SKILL.md
+  files it needs), `superpowers` optional via `/add-plugin`, and no hard-disable of
   auto-delegation.
 - `rules/` - 19 `.mdc` rules copied into a project's `.cursor/rules/`: six always-on
   `baseline-*.mdc` (`alwaysApply` - interaction / quality-gates / security / git / navigation /
@@ -86,7 +87,9 @@ Invariants).
 - **Things that must NOT grow back here:** plugins (Cursor has no `/plugin install`; equivalents
   are natives / Open-VSX / MCPs - the lint fails any active PLUGINS entry), `model:` / `effort:`
   frontmatter pins (Cursor's SKILL.md and agent schemas have no such fields - they are silently
-  dead), and per-tool `tools:` allowlists (Cursor has only a `readonly` bool).
+  dead), per-tool `tools:` allowlists (Cursor has only a `readonly` bool), and a frontmatter
+  `skills:` preload list (no such field either - a seat that needs a skill READS its SKILL.md,
+  which is why the agent bodies name the files explicitly rather than assuming they arrived).
 
 ## Working in THIS repo - invariants
 

@@ -310,14 +310,26 @@ MCPS=(
 )
 
 # (5) Cursor hooks "filename::event" + rules. These are CURSOR-contract scripts (.cursor/hooks.json
-# v1) copied out of the run's source clone (hooks/). The portable Bash guards map over as hooks:
-#   - guard-protected-force-push -> beforeShellExecution (reads {command}, returns {permission}).
+# v1) copied out of the run's source clone (hooks/). Each reads its payload on stdin and answers
+# an allow/deny permission. A file may be wired to more than one event - list it once per event.
+#   - guard-protected-force-push -> beforeShellExecution (blocks a force-push to main/master/develop).
 #   - guard-catastrophic-rm      -> beforeShellExecution (blocks recursive rm of /, ~, $HOME, bare *).
+#   - guard-ungated-commit       -> beforeShellExecution (a non-trivial git commit needs the review receipt).
+#   - guard-read-whole-file      -> beforeReadFile + beforeShellExecution (a whole-file read of a large
+#                                   source file, by tool or by shell cat, goes through serena first).
+#   - guard-unapproved-dispatch  -> subagentStart (an implementer fan-out needs the recorded approval).
+# Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot block
+# and never sees the response text, and there is no question tool to gate) and usage instrumentation
+# (its analyzer reads a transcript format Cursor does not produce).
 # Convention enforcement is NOT a hook - its home is a soft, glob-auto-attaching rule
 # (.cursor/rules/*.mdc, see CURSOR_RULES), never a pre-edit block.
 CURSOR_HOOKS=(
   "guard-protected-force-push.js::beforeShellExecution"
   "guard-catastrophic-rm.js::beforeShellExecution"
+  "guard-ungated-commit.js::beforeShellExecution"
+  "guard-read-whole-file.js::beforeReadFile"
+  "guard-read-whole-file.js::beforeShellExecution"
+  "guard-unapproved-dispatch.js::subagentStart"
 )
 # A rule entry is "name" (copied from the source clone's rules/) or "name|url" (fetched from that
 # url - the form for a third-party rule we would reference rather than vendor; currently unused,

@@ -36,8 +36,14 @@ Invariants).
   devops) + `markdown-docs.mdc` (a trigger patch: the doc skills' keywords miss a plain `.md`
   content edit) + the two repair routers (`dotnet-` / `angular-repair-agents.mdc`: a red build or
   suite goes to a resolver seat) + the always-on `ponytail.mdc`.
-- `hooks/` - `guard-protected-force-push.js` + `guard-catastrophic-rm.js` in Cursor's
-  `beforeShellExecution` contract, wired via `.cursor/hooks.json`.
+- `hooks/` - five guards in Cursor's hook contract, wired via `.cursor/hooks.json`: three on
+  `beforeShellExecution` (`guard-protected-force-push.js`, `guard-catastrophic-rm.js`,
+  `guard-ungated-commit.js`), `guard-read-whole-file.js` on both `beforeReadFile` and
+  `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`. Each answers
+  an allow/deny permission on stdout. Two peer guards have no Cursor home and are deliberately
+  absent: a stop-contract gate (the `stop` hook cannot block and never receives the response
+  text, and there is no question tool to gate) and usage instrumentation (its analyzer reads a
+  transcript format Cursor does not produce).
 - `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins), dependency-free
   by design: `.sh`/`.ps1` twin parity (SKILLS set + order, MCPS, no PLUGINS), on-disk agents/rules/hooks
   == the manifest arrays, `skills/` dirs == the manifest entries (each with a `SKILL.md` whose

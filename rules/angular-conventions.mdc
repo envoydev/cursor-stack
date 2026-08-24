@@ -1,22 +1,19 @@
 ---
 description: Angular house conventions - apply when editing Angular component/service/directive/etc. files.
-globs: "**/*.component.ts,**/*.service.ts,**/*.directive.ts,**/*.pipe.ts,**/*.guard.ts,**/*.resolver.ts,**/*.interceptor.ts,**/*.component.html,**/src/app/**/*.ts,**/src/lib/**/*.ts"
+globs: "**/angular.json,**/*.component.ts,**/*.component.html,**/*.service.ts,**/*.directive.ts,**/*.pipe.ts,**/*.guard.ts,**/*.resolver.ts,**/*.module.ts,**/*.routes.ts,**/src/app/**/*.ts,**/src/app/**/*.html,**/src/lib/**/*.ts,**/src/lib/**/*.html"
 alwaysApply: false
 ---
 
-When creating or editing Angular files (`*.component.ts`, `*.service.ts`, `*.directive.ts`,
-`*.pipe.ts`, `*.guard.ts`, `*.resolver.ts`, `*.interceptor.ts`,
-`*.component.html`), follow the `angular-conventions` skill under `.cursor/skills/`:
-signals, standalone components, OnPush, reactive forms, accessibility. On the `.ts` files the
-TypeScript baseline (`typescript-conventions.mdc`) also auto-attaches, so both compose.
+Editing Angular / Ionic framework code - load `angular-conventions` (on top of the `typescript`
+baseline) before the edit - skip the load when it is already in context (some seats preload it);
+conventions are the source of truth, not recall.
+Covers components, services, directives, pipes, guards, resolvers, modules, routes, and templates -
+an Ionic/Capacitor app shares the same conventions (a bespoke layout outside `src/app` / `src/lib`:
+load the skill yourself). In an Ionic/Capacitor workspace (`ionic.config.json` /
+`capacitor.config.*` present) the `ionic` load is part of the SAME first action, not an optional
+companion - it overrides where Ionic diverges (shell change detection, zoneless, forms,
+transitions, refresh-on-entry); measured: one session edited IonIcon components with
+`angular-conventions` loaded and `ionic` never loaded, leaving the Ionic trap list unaudited.
+Skip one-line tweaks.
 
-If the `angular-conventions` skill is not loaded, hold the line on the highest-value rules:
-standalone components with `inject()` over constructor injection, signals over manual
-subscriptions, and `OnPush` change detection. Target the Angular 17+ house floor, reaching for the newest idioms the workspace ships.
-
-This is guidance, auto-attached by glob (not a hard block). The `src/app` / `src/lib` `.ts`
-globs catch Angular 20's suffix-less filenames (a `user.ts` component the type-suffix globs miss);
-they widen the surface to non-Angular `.ts` under those dirs too, but the guidance self-scopes
-('when editing Angular files') so a plain helper is unaffected. Bare `.html` stays ungated on
-purpose (Angular template vs static page is ambiguous - and unlike a `.ts`, a stray match is a
-real miss), so a v20 `user.html` template routes through `frontend` or a manual load, not here.
+<!-- Maintainer note: the src/app / src/lib directory globs exist to catch the v20 suffix-less file names the type-suffix globs miss. -->

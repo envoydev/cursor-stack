@@ -323,27 +323,29 @@ CURSOR_HOOKS=(
 # url - the form for a third-party rule we would reference rather than vendor; currently unused,
 # and the one entry shape that still touches the network).
 CURSOR_RULES=(
-  # Always-on baseline set (alwaysApply, no globs) - the cross-cutting conventions; loaded every
-  # turn like AGENTS.md, installer-refreshed.
-  "baseline-interaction.mdc"                  # communication, adversarial proposal review, planning thresholds
-  "baseline-quality-gates.mdc"                # code quality + the done-claim gate
-  "baseline-security.mdc"                     # secret hygiene, /review on sensitive diffs
-  "baseline-git.mdc"                          # commits/PRs, commit-message shape, do-not-commit-until-asked
-  "baseline-navigation.mdc"                   # serena-first navigation, never Read a whole file to locate a symbol
-  # Per-file-type convention rules, soft and auto-attaching by glob (cs ng sql ts).
-  "csharp-conventions.mdc"                    # cs  -> csharp (globs **/*.cs)
-  "typescript-conventions.mdc"                # ts  -> typescript (.ts/.tsx/.js/.jsx/.mjs/.cjs)
-  "sql-conventions.mdc"                       # sql -> database-conventions (**/*.sql)
-  "angular-conventions.mdc"                   # ng  -> angular-conventions (*.component.ts &c.)
-  "wpf-conventions.mdc"                       # xaml -> dotnet-wpf
-  "scss-conventions.mdc"                      # scss/css -> angular-styling
-  "ponytail.mdc"                              # ponytail 'lazy senior dev' minimal-code rule (alwaysApply) - vendored here
-  # Repair routing: a red build/suite goes to a resolver seat, not an in-session loop.
-  "dotnet-repair-agents.mdc"                  # cs/csproj/sln/xaml/props -> dotnet-build-error-resolver + dotnet-test-failure-resolver
-  "angular-repair-agents.mdc"                 # ng/spec/scss -> ng-build-error-resolver + angular-test-resolver
-  # Trigger patches: the house skill's own keywords miss a plain content edit, so a glob routes it.
-  "markdown-docs.mdc"                         # md -> markdown-style (+ docs-as-code for ADR/Mermaid/C4)
-  "devops-conventions.mdc"                    # Dockerfile/compose/workflows -> devops
+  # Always-on baseline (no paths) - loads every session like AGENTS.md; one job per file, comment out what a project doesn't want.
+  "baseline-interaction.mdc"             # communication + evaluating-proposals + planning (merged by exclusion affinity)
+  "baseline-quality-gates.mdc"           # code-quality + definition-of-done (merged by exclusion affinity)
+  "baseline-security.mdc"
+  "baseline-git.mdc"
+  "baseline-navigation.mdc"
+  "baseline-docs-root.mdc"               # generated-docs root resolution (CURSOR_DOCS_PATH)
+  # Path-scoped routing
+  "markdown-docs.mdc"                    # markdown-style routing, path-scoped **/*.md
+  "javascript-conventions.mdc"           # JS-family conventions, path-scoped js/jsx/mjs/cjs
+  "dotnet-repair-agents.mdc"             # .NET repair-loop routing, path-scoped cs/csproj/sln/xaml
+  "angular-repair-agents.mdc"            # Angular repair-loop routing, path-scoped
+  # Convention rules (soft, glob auto-attach) - each points ONE file family at its house-style skill; replaced the require-convention-skill hard gate.
+  "typescript-conventions.mdc"           # ts/js family -> typescript (framework-agnostic baseline)
+  "angular-conventions.mdc"              # Angular file shapes -> angular-conventions (Angular/Ionic projects only)
+  "angular-styling-conventions.mdc"      # scss/css -> angular-styling (Angular/Ionic projects only)
+  "csharp-conventions.mdc"               # c#: .cs -> csharp (backend, desktop, console)
+  "wpf-conventions.mdc"                  # wpf: .xaml -> dotnet-wpf
+  "winforms-conventions.mdc"             # winforms: .Designer.cs -> dotnet-winforms
+  "sql-conventions.mdc"                  # sql: .sql -> database-conventions
+  "devops-conventions.mdc"               # rest (devops): Dockerfile/compose/workflow -> devops
+  # Minimal-code discipline, vendored as a rule.
+  "ponytail.mdc"                         # ponytail 'lazy senior dev' minimal-code rule (alwaysApply)
 )
 
 # (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's
@@ -712,6 +714,28 @@ install_cursor_rules() {
       log "  !! not in source (kept existing copy): $file"
     fi
   done
+  stamp_docs_root_rule "$rules_dir"
+}
+
+# Bake the resolved generated-docs root into the copied baseline-docs-root.mdc. Cursor has no
+# per-project environment store, so a session cannot look the value up - the stamp IS the
+# contract. Runs on install AND update, so it tracks CURSOR_DOCS_PATH whenever that changes.
+stamp_docs_root_rule() {
+  local rules_dir="$1" rule="$1/baseline-docs-root.mdc" val
+  [ -f "$rule" ] || return 0
+  val="${CURSOR_DOCS_PATH:-.cursor/docs}"
+  # A literal replacement, so a value holding regex metacharacters cannot corrupt the rule.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$rule" "$val" <<'PY' || log "  !! docs-root stamp failed - the rule keeps its placeholder"
+import sys
+rule, val = sys.argv[1], sys.argv[2]
+s = open(rule, encoding="utf-8").read()
+open(rule, "w", encoding="utf-8").write(s.replace("__DOCS_ROOT__", val))
+PY
+    log "  docs root stamped -> $val"
+  else
+    log "  !! python3 not found - baseline-docs-root.mdc keeps its __DOCS_ROOT__ placeholder"
+  fi
 }
 
 install_cursor_agents() {

@@ -29,9 +29,10 @@ Invariants).
   contract: `model: inherit` (no reliable model/effort pin), no per-tool `tools:` allowlist (only
   a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of
   auto-delegation.
-- `rules/` - 16 `.mdc` rules copied into a project's `.cursor/rules/`: five always-on
-  `baseline-*.mdc` (`alwaysApply` - interaction / quality-gates / security / git / navigation) +
-  seven glob-auto-attaching convention rules (csharp / typescript / sql / angular / wpf / scss /
+- `rules/` - 19 `.mdc` rules copied into a project's `.cursor/rules/`: six always-on
+  `baseline-*.mdc` (`alwaysApply` - interaction / quality-gates / security / git / navigation /
+  docs-root, whose `__DOCS_ROOT__` line the installer stamps) + nine glob-auto-attaching convention
+  rules (csharp / typescript / javascript / sql / angular / angular-styling / wpf / winforms /
   devops) + `markdown-docs.mdc` (a trigger patch: the doc skills' keywords miss a plain `.md`
   content edit) + the two repair routers (`dotnet-` / `angular-repair-agents.mdc`: a red build or
   suite goes to a resolver seat) + the always-on `ponytail.mdc`.

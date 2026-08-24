@@ -1,0 +1,9 @@
+---
+description: Stylesheet house conventions - apply when editing SCSS/CSS files in an Angular workspace.
+globs: "**/*.component.scss,**/*.component.css,**/src/styles.scss,**/src/styles.css,**/src/global.scss,**/src/theme/**/*.scss,**/src/app/**/*.scss,**/src/app/**/*.css,**/src/lib/**/*.scss,**/src/lib/**/*.css"
+alwaysApply: false
+---
+
+Editing stylesheets in an Angular / Ionic workspace - load `angular-styling` before the edit - skip the load when it is already in context (some seats preload it);
+conventions are the source of truth, not recall. Governs `.scss`/`.css` component-scoped styling,
+Material or not. Skip one-line tweaks.

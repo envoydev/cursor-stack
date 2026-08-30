@@ -59,8 +59,23 @@ function main(payload)
     let stale = false;
     try
     {
-        const age = Date.now() - fs.statSync(gate).mtimeMs;
-        if (age > MAX_STAMP_AGE_MS)
+        const stampMs = fs.statSync(gate).mtimeMs;
+        const age = Date.now() - stampMs;
+        // A stamp written BEFORE this session started records another session's decision, and the
+        // age cap alone let one through: five implementer dispatches ran on a stamp a different,
+        // already-closed session wrote 2h52m earlier - inside the cap, so the gate saw consent this
+        // run never gave (measured). The stamp is the dispatching session's own or it is not consent.
+        let sessionStartMs = 0;
+        try
+        {
+            sessionStartMs = fs.statSync(String(payload.transcript_path || payload.conversation_path || '')).birthtimeMs || 0;
+        }
+        catch
+        {
+            sessionStartMs = 0;
+        }
+
+        if (age > MAX_STAMP_AGE_MS || (sessionStartMs && stampMs < sessionStartMs))
         {
             stale = true;
         }

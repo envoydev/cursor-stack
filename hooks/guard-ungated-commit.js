@@ -36,11 +36,21 @@ function deny(userMessage, agentMessage)
 
 const unquote = s => s.replace(/^["']|["']$/g, '');
 
+// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES the command is
+// inert text, and matching it blocked a document write for its own prose (measured - one 47KB plan
+// was re-authored because it named `git commit`). Blank the payload spans, keeping the character
+// count so any index into the command still holds.
+const stripHeredocs = (c) => String(c).replace(
+    /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+    (m) => m.replace(/[^\n]/g, ' '),
+);
+
 function main(payload)
 {
     const command = String(payload.command || '');
+    const scanned = stripHeredocs(command);
     // A real `git commit` subcommand (allowing -C/-c/global flags between), not `git log --grep commit`.
-    const commitMatch = command.match(/\bgit(\s+-[cC]?\s*\S+|\s+--\S+)*\s+commit\b/);
+    const commitMatch = scanned.match(/\bgit(\s+-[cC]?\s*\S+|\s+--\S+)*\s+commit\b/);
     if (!commitMatch)
     {
         allow();
@@ -51,8 +61,13 @@ function main(payload)
     // it would reject the receipt discipline this gate exists to enforce. All matches are bound
     // to the PRE-commit segment - a commit message merely mentioning COMMIT-GATE is not a receipt.
     const preCommit = command.slice(0, commitMatch.index);
+    // The receipt must be WRITTEN, not merely mentioned: requiring the words anywhere in the
+    // pre-commit text let a single `echo "... VERIFIED ... authorized: ..." > notes.txt` satisfy the
+    // gate on a real dirty tree (reproduced). The write has to target the gate file itself.
+    const writesGate = /(?:>>?|\btee\s+(?:-a\s+)?|\bprintf\b[^>]*>>?)\s*["']?(\S*flow\/COMMIT-GATE)\b/.test(preCommit)
+        || /\bcat\s*>>?\s*["']?(\S*flow\/COMMIT-GATE)\b/.test(preCommit);
     if (preCommit.includes('COMMIT-GATE')
-        && /(>>?|\btee\b|\bcat\b|\bprintf\b)/.test(preCommit)
+        && writesGate
         && (/\bWAIVED\b/.test(preCommit)
             || (/\bVERIFIED\b/.test(preCommit) && /authorized:/.test(preCommit))))
     {

@@ -168,6 +168,14 @@ function isProtectedForcePush(command, cwd)
     return false;
 }
 
+// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES this command is
+// inert text, and matching it blocked a document write for its own prose (measured on the sibling
+// commit guard). Blank the payload spans, keeping the character count so any index still holds.
+const stripHeredocs = (c) => String(c).replace(
+  /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+  (m) => m.replace(/[^\n]/g, ' '),
+);
+
 let input = '';
 process.stdin.on('data', d => (input += d));
 process.stdin.on('end', () =>
@@ -177,7 +185,7 @@ process.stdin.on('end', () =>
     try
     {
         const p = JSON.parse(input);
-        cmd = p.command || '';
+        cmd = stripHeredocs(p.command || '');
         cwd = p.cwd || p.workspace_root || p.workspaceRoot || '';
     }
     catch {}

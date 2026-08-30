@@ -123,11 +123,19 @@ function isCatastrophicRm(command)
     return false;
 }
 
+// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES this command is
+// inert text, and matching it blocked a document write for its own prose (measured on the sibling
+// commit guard). Blank the payload spans, keeping the character count so any index still holds.
+const stripHeredocs = (c) => String(c).replace(
+  /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+  (m) => m.replace(/[^\n]/g, ' '),
+);
+
 let input = '';
 process.stdin.on('data', d => (input += d));
 process.stdin.on('end', () => {
   let cmd = '';
-  try { cmd = JSON.parse(input).command || ''; } catch {}
+  try { cmd = stripHeredocs(JSON.parse(input).command || ''); } catch {}
   if (isCatastrophicRm(cmd)) {
     process.stdout.write(JSON.stringify({
       permission: 'deny',

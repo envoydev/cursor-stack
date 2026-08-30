@@ -30,6 +30,18 @@ const GATED_EXT = /\.(ts|tsx|js|jsx|mjs|cjs|cs|go|razor|cshtml|xaml|html)$/;
 const THRESHOLD = 200;
 const COVERAGE_CAP = 0.6;
 
+// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES a dump is inert
+// text, and matching it blocked a document write for its own prose (measured). Blank the payload
+// spans, keeping the character count so any index into the command still holds.
+const stripHeredocs = (c) => String(c).replace(
+    /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+    (m) => m.replace(/[^\n]/g, ' '),
+);
+
+// Same extensions as GATED_EXT, unanchored - a sweep names its files inside a glob or a loop body,
+// never as the command string's own tail.
+const GATED_EXT_ANY = /\.(ts|tsx|js|jsx|mjs|cjs|cs|go|razor|cshtml|xaml|html)\b/i;
+
 const allow = () => respond({ permission: 'allow' });
 const deny = (userMessage, agentMessage) => respond({ permission: 'deny', user_message: userMessage, agent_message: agentMessage });
 
@@ -96,10 +108,44 @@ function bumpCoverage(conversationId, file, delivered)
 // ---- beforeShellExecution: a whole-file dump through the shell ----
 function handleShell(payload)
 {
-    const command = String(payload.command || '');
-    if (!/\bcat\b|\bsed\b/.test(command))
+    const command = stripHeredocs(payload.command || '');
+    // Only cat/sed were gated, so the same dump walked through under any other verb: head -n
+    // <huge>, tail -n +1, less, awk '1', a runtime open().read() (measured x5 against a real file).
+    if (!/\bcat\b|\bsed\b|\bhead\b|\btail\b|\bless\b|\bmore\b|\bawk\b|\bopen\(/.test(command))
     {
         allow();
+    }
+
+    // Three shapes dumped whole trees past the per-file check below - a loop whose cat argument is
+    // the loop VARIABLE, a find -exec whose argument is the literal {}, and an xargs cat. None can
+    // be size-checked per file, and all three are the sweep this gate exists to stop.
+    const sweep = /\bfor\s+\w+\s+in\b[^\n]*\bdo\b[^\n]*\bcat\b/i.test(command)
+        ? 'a shell loop over a file list'
+        : /\bfind\b[^\n]*-exec\s+cat\b/i.test(command)
+            ? 'find -exec cat'
+            : /\|\s*xargs\s+(?:-\w+\s+)*cat\b/i.test(command)
+                ? 'xargs cat'
+                : null;
+    if (sweep && GATED_EXT_ANY.test(command))
+    {
+        deny(
+            `Blocked a whole-file sweep of source files through ${sweep}.`,
+            `Blocked: whole-file sweep of source files via ${sweep}. Every file in the sweep is dumped unchecked - the `
+            + `per-file size gate cannot see a loop variable or a find placeholder. Per baseline-navigation.mdc, locate what `
+            + `you need first (serena find_symbol / get_symbols_overview, or grep -n), then read only the ranges that matter.`
+        );
+    }
+
+    const runtimeDump = /\b(python3?|node|perl|ruby)\b[^\n]*\b(open\([^)]*\)\s*\.read\(|readFileSync|File\.read)/.test(command);
+    const unbounded = /\bhead\s+-n\s*(\d{5,})\b/.test(command) || /\btail\s+-n\s*\+\s*1\b/.test(command)
+        || /\b(less|more)\s+\S/.test(command) || /\bawk\s+(['"])1\1\s+\S/.test(command);
+    if ((runtimeDump || unbounded) && GATED_EXT_ANY.test(command))
+    {
+        deny(
+            'Blocked an unbounded whole-file dump of a source file through the shell.',
+            'Blocked: unbounded whole-file dump (head -n <huge> / tail -n +1 / less / awk \'1\' / a runtime open().read()). '
+            + 'Per baseline-navigation.mdc, read the located range - serena find_symbol, or a bounded sed -n \'<start>,<end>p\'.'
+        );
     }
 
     const anchors = [payload.cwd, ...(payload.workspace_roots || []), process.cwd()].filter(Boolean);
@@ -124,14 +170,15 @@ function handleShell(payload)
             continue;
         }
 
-        const match = segment.match(/\bcat\s+(?:-\w+\s+)*("[^"]+"|'[^']+'|[^\s;&|<>]+)/)
-            || segment.match(/\bsed\s+-n\s+["']1,\$p["']\s+("[^"]+"|'[^']+'|[^\s;&|<>]+)/);
-        if (!match)
+        // `cat a.cs b.cs` size-checked only the first argument (measured) - take every path token.
+        const catAll = segment.match(/\bcat\s+((?:(?:-\w+|"[^"]+"|'[^']+'|[^\s;&|<>]+)\s*)+)/);
+        const files = catAll
+            ? catAll[1].trim().split(/\s+/).filter((t) => !t.startsWith('-')).map((t) => t.replace(/^["']|["']$/g, ''))
+            : [];
+        const sedMatch = segment.match(/\bsed\s+-n\s+["']1,\$p["']\s+("[^"]+"|'[^']+'|[^\s;&|<>]+)/);
+        if (sedMatch) files.push(sedMatch[1].replace(/^["']|["']$/g, ''));
+        for (const file of files)
         {
-            continue;
-        }
-
-        const file = match[1].replace(/^["']|["']$/g, '');
         if (!GATED_EXT.test(file))
         {
             continue;
@@ -156,6 +203,7 @@ function handleShell(payload)
                 `Blocked: whole-file dump of ${file} (${lines} lines) via the shell. Per baseline-navigation.mdc, a bare cat/sed of a large `
                 + `source file is the same whole-file read the read gate blocks, routed through the terminal. ${serenaHint(file)}`,
             );
+        }
         }
     }
 

@@ -6,6 +6,6 @@
   "description": "Personal Cursor agent stack - installers, skills, subagents, rules, and hooks; self-sourcing, the installer clones this repo to copy the skills in.",
   "scripts": {
     "lint": "node scripts/lint-stack.js",
-    "test": "npm run lint && node --test 'scripts/**/*.test.js'"
+    "test": "npm run lint && node --test"
   }
 }

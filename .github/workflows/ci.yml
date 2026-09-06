@@ -43,14 +43,23 @@ on:
     branches: [main, develop]
 
 jobs:
+  # THREE operating systems: the guard tests drive real hooks through real paths, and the platforms
+  # disagree about them - separators, an absolute path's shape, and which spelling of a Windows path
+  # node resolves against the current drive. The peer stack ran ubuntu-only and `npm test` on
+  # Windows executed ZERO tests while exiting 0, because the script passed its glob through the
+  # shell and cmd.exe does not strip single quotes. A gate that cannot fail is not a gate.
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm run lint
+      - run: npm test
 
   installer-linux:
     runs-on: ubuntu-latest

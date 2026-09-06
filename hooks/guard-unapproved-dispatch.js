@@ -53,7 +53,7 @@ function main(payload)
     const seat = seatMatch[1];
     const root = (payload.workspace_roots || [])[0] || process.cwd();
     const docsRoot = process.env.CURSOR_DOCS_PATH || '.cursor/docs';
-    const gate = path.join(root, docsRoot, 'flow', 'APPROVAL');
+    const gate = path.resolve(root, docsRoot, 'flow', 'APPROVAL');
 
     let first = '';
     let stale = false;

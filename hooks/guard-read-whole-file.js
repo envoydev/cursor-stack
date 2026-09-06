@@ -149,8 +149,17 @@ function handleShell(payload)
     }
 
     const anchors = [payload.cwd, ...(payload.workspace_roots || []), process.cwd()].filter(Boolean);
-    const resolve = (file) =>
+    // Git Bash / MSYS spell a Windows path in POSIX MOUNT form (`/c/Users/...`, `/cygdrive/c/...`),
+    // which node on win32 resolves against the CURRENT drive instead - a falsehood that made the
+    // peer stack's guards judge a path that was never the one named. Translate before resolving;
+    // off Windows the spelling is a real POSIX path and is never touched.
+    const MOUNT_RE = /^(?:\/cygdrive)?\/([A-Za-z])(?=\/|$)/;
+    const nativePath = (p) => (process.platform === 'win32'
+        ? String(p).replace(MOUNT_RE, (m, d) => `${d.toUpperCase()}:\\`)
+        : String(p));
+    const resolve = (raw) =>
     {
+        const file = nativePath(raw);
         if (path.isAbsolute(file)) return { lines: fileLineCount(file), resolved: true };
         for (const dir of anchors)
         {

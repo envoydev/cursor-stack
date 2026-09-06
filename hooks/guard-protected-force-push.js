@@ -1,27 +1,42 @@
 #!/usr/bin/env node
-// Cursor `beforeShellExecution` hook: block a force-push or deletion of a protected
-// branch (main / master / develop). Reads { command, cwd? } on stdin, returns
-// { permission }. Speaks Cursor's hooks.json v1 contract (beforeShellExecution).
+// installer-managed - update overwrites local edits; put project policy in a separate hook file.
+// Cursor `beforeShellExecution` hook: block a force-push or deletion of a protected branch
+// (main / master / develop). This is the one git rule in AGENTS.md that is a deterministic,
+// catastrophic, irreversible event - so it is enforced by a hook, not left to prose the model
+// can skip. Reads { command, cwd?, workspace_roots? } on stdin, answers { permission }.
 //
-// The command is split on ;|& into segments (like the rm guard) and
-// `git push` must be a segment's own COMMAND, not a substring of another program's
-// argument, so `echo "git push --force"` no longer false-positives. It blocks a `git
-// push` that would irreversibly rewrite or remove a protected branch:
-//   - a force: -f / --force / --force-with-lease / --force-if-includes, a clustered
-//     short flag (-fu / -uf), a '+'-prefixed refspec, --mirror (incl. --mirror=<value>),
-//     or a forced --all;
+// Scope is deliberately narrow - it fires ~never in normal work. The command is split
+// on ;|& into segments (like the rm guard) and `git push` must be a segment's own
+// COMMAND - not a substring of another program's argument - so `echo "git push --force"`
+// does not false-positive. It blocks a `git push` that would irreversibly rewrite or
+// remove main / master / develop:
+//   - a force: -f / --force / --force-with-lease / --force-if-includes, a
+//     '+'-prefixed refspec, --mirror (incl. --mirror=<value>), or a forced --all;
 //   - a deletion: a `:branch` (empty-source) refspec, or --delete / -d;
-//   - named explicitly (refspec, normalized past any refs/heads/ prefix and one layer
-//     of surrounding quotes), or a bare force/delete while HEAD is on a protected
-//     branch (when cwd is available).
-// A plain fast-forward push, or any force on a feature branch, passes.
-// Out of scope (matches the rm guard's honesty): indirection that hides the push from
-// a flat token scan - aliases, `eval`, subshells, or git invoked via a wrapper script -
-// is NOT caught here; this guard reads the literal command.
+//   - named explicitly (refspec, normalized past any refs/heads/ prefix and one
+//     layer of surrounding quotes), or a bare force/delete while HEAD is on a
+//     protected branch.
+// A plain fast-forward push to main, or any force on a feature branch (prefer
+// --force-with-lease), is left alone - blocking it would be a false-positive.
+// Out of scope (matches the rm guard's honesty): indirection that hides the push
+// behind a wrapper, `eval`, or a subshell is not caught - this reads flat tokens.
 'use strict';
+const fs = require('fs');
+// The docs root env value - where the block ledger below is written.
+const docsRootEnv = () => process.env.CURSOR_DOCS_PATH || '.cursor/docs';
 const { execFileSync } = require('child_process');
 
-// Same segment split as the rm guard so each `git push` is inspected as its own command.
+// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES this command is
+// inert text, and matching it blocked a document write for its own prose (reproduced). Blank the
+// payload spans, keeping the character count so any index into the command still holds.
+const stripHeredocs = (c) => String(c).replace(
+  /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
+  (m) => m.replace(/[^\n]/g, ' '),
+);
+
+// Same segment split as the rm guard - a compound command (`a && git push --force ; b`)
+// is inspected segment by segment so `git push` must be a segment's own COMMAND, not a
+// substring of another program's argument (no false positive on `echo git push --force`).
 const SEPARATORS = /[;|&]{1,2}|\n/;
 
 const PROTECTED = ['main', 'master', 'develop'];
@@ -40,7 +55,8 @@ function unquote(tok)
     return t;
 }
 
-// Unquote, then drop a leading '+' (force marker) and any 'refs/heads/' prefix for the protected check.
+// Branch name from a ref/refspec destination, normalized for the protected check:
+// unquote, then drop a leading '+' (force marker) and any 'refs/heads/' prefix.
 function normalizeBranch(ref)
 {
     return unquote(ref).replace(/^\+/, '').replace(/^refs\/heads\//, '');
@@ -64,26 +80,24 @@ function refSource(token)
     return colon === -1 ? ref : ref.slice(0, colon);
 }
 
-// A "bare" push has no explicit refspec - at most the remote name; it targets HEAD.
-function isBarePush(after)
+// A "bare" push has no explicit refspec - at most the remote (e.g. `git push`,
+// `git push origin`, `git push --force`). Such a push targets the current branch.
+function isBarePush(tokensAfterPush)
 {
-    return after.filter(t => !t.startsWith('-')).length <= 1;
+    const refs = tokensAfterPush.filter(t => !t.startsWith('-'));
+
+    return refs.length <= 1; // 0 = `git push`, 1 = the remote name only
 }
 
 function currentBranch(cwd)
 {
-    if (!cwd)
-    {
-        return null; // Cursor payload didn't carry a workspace path -> fail open on the bare-push check
-    }
-
     try
     {
-        return execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim();
+        return execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', timeout: 5000 }).trim();
     }
     catch
     {
-        return null;
+        return null; // not a repo / detached / git missing -> caller fails open
     }
 }
 
@@ -123,6 +137,7 @@ function pushArgs(seg)
     return tokens[j] === 'push' ? tokens.slice(j + 1) : null;
 }
 
+// Block a push that would force-update, delete, or mirror a protected branch.
 function isProtectedForcePush(command, cwd)
 {
     for (const seg of command.split(SEPARATORS))
@@ -133,20 +148,22 @@ function isProtectedForcePush(command, cwd)
             continue;
         }
 
+        // FORCE_FLAG catches -f / --force / --force-with-lease / --force-if-includes as whole tokens;
+        // also catch clustered short flags (-fu, -uf, -fv): single-dash token containing f.
         const hasForceFlag = after.some(t => FORCE_FLAG.test(t))
-            || after.some(t => /^-[A-Za-z]*f[A-Za-z]*$/.test(t) && !t.startsWith('--')); // clustered -fu / -uf
+            || after.some(t => /^-[A-Za-z]*f[A-Za-z]*$/.test(t) && !t.startsWith('--'));
         const hasDeleteFlag = after.includes('--delete') || after.includes('-d');
 
-        // --mirror / --mirror=<value> (and a forced --all) rewrite/prune every remote ref
-        // without naming them.
+        // --mirror / --mirror=<value> (and a forced --all) rewrite/prune every remote ref,
+        // protected ones included, without naming them - always catastrophic on a shared remote.
         if (after.some(t => t === '--mirror' || t.startsWith('--mirror='))
             || (after.includes('--all') && hasForceFlag))
         {
             return true;
         }
 
-        // Explicit refspec whose destination is a protected branch, when the op is a force
-        // ('+' prefix or a force flag) or a delete (--delete/-d, or an empty-source ':dst').
+        // Explicit refspec whose destination is a protected branch, when the op is a
+        // force ('+' prefix or a force flag) or a delete (--delete/-d, or ':dst').
         // Unquote first so a quoted token - `"main"` or `"+main"` - is read correctly.
         const targets = after.filter(t => !t.startsWith('-') && PROTECTED.includes(normalizeBranch(refDestination(t))));
         for (const t of targets)
@@ -168,38 +185,87 @@ function isProtectedForcePush(command, cwd)
     return false;
 }
 
-// A heredoc body is DATA, not shell: a plan or checklist that merely DESCRIBES this command is
-// inert text, and matching it blocked a document write for its own prose (measured on the sibling
-// commit guard). Blank the payload spans, keeping the character count so any index still holds.
-const stripHeredocs = (c) => String(c).replace(
-  /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\s*\2\s*$/gm,
-  (m) => m.replace(/[^\n]/g, ' '),
-);
 
-let input = '';
-process.stdin.on('data', d => (input += d));
-process.stdin.on('end', () =>
+// --- Cursor hooks.json v1 contract ------------------------------------------------------------
+// beforeShellExecution answers with a permission object on stdout - there is no exit-2 denial and
+// no stderr channel back to the model, so the reason has to travel inside the response.
+let payload = {};
+
+function respond(body)
 {
-    let cmd = '';
-    let cwd = '';
+    process.stdout.write(JSON.stringify(body));
+    process.exit(0);
+}
+
+const allow = () => respond({ permission: 'allow' });
+
+// --- block telemetry (shared by every guard hook; keep the copies identical) ------------
+// A block costs a whole turn - the reason goes back to the model and the work is re-done - so a
+// FALSE positive is 10-100x the cost of the gate itself, and until this existed the block rate was
+// the one number the stack could not measure. One JSONL row per block, written under the docs root
+// so one reader can tally every guard. Best-effort in every direction: telemetry never changes the
+// verdict and never throws.
+function ledger(event, reason)
+{
     try
     {
-        const p = JSON.parse(input);
-        cmd = stripHeredocs(p.command || '');
-        cwd = p.cwd || p.workspace_root || p.workspaceRoot || '';
+        const path = require('path');
+        const root = payload.cwd || (payload.workspace_roots || [])[0] || process.cwd();
+        // resolve, NOT join: an ABSOLUTE CURSOR_DOCS_PATH makes path.join('/a/b','/x/y') into
+        // '/a/b/x/y', so every ledger row lands in a doubled path that nothing reads. resolve
+        // honours an absolute value and still joins a relative one.
+        const dir = path.resolve(root, docsRootEnv(), 'hook-blocks');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.appendFileSync(path.join(dir, `${payload.session_id || 'nosession'}.jsonl`), JSON.stringify({
+            ts: new Date().toISOString(),
+            hook: path.basename(__filename),
+            event,
+            tool: 'shell',
+            reason: String(reason).split('\n')[0].slice(0, 200),
+        }) + '\n');
     }
-    catch {}
+    catch { /* telemetry is never allowed to break the gate */ }
+}
 
-    if (isProtectedForcePush(cmd, cwd))
+function deny(userMessage, agentMessage)
+{
+    ledger('beforeShellExecution', agentMessage);
+    respond({ permission: 'deny', user_message: userMessage, agent_message: agentMessage });
+}
+
+function readPayload()
+{
+    try
     {
-        process.stdout.write(JSON.stringify({
-            permission: 'deny',
-            user_message: 'Blocked rewriting/deleting a shared branch (main/master/develop): no force-push, branch deletion, or --mirror. Use --force-with-lease on a feature branch and open a PR.',
-            agent_message: 'A Cursor hook blocked a force-push / deletion of a protected branch (main/master/develop).'
-        }));
+        payload = JSON.parse(fs.readFileSync(0, 'utf8'));
     }
-    else
+    catch
     {
-        process.stdout.write(JSON.stringify({ permission: 'allow' }));
+        allow(); // can't parse hook input -> don't block on a harness malfunction
     }
-});
+    if (!payload || typeof payload !== 'object')
+    {
+        allow(); // a JSON scalar/null - nothing to judge
+    }
+}
+
+function main()
+{
+    readPayload();
+
+    const command = stripHeredocs(payload.command ?? '');
+    const cwd = payload.cwd || (payload.workspace_roots || [])[0] || process.cwd();
+    if (!isProtectedForcePush(command, cwd))
+    {
+        allow();
+    }
+
+    deny(
+        'Blocked a force-push or deletion of a protected branch (main / master / develop).',
+        'Rewriting or deleting a shared branch (main/master/develop) is forbidden (AGENTS.md) - ' +
+        'no force-push, branch deletion, or --mirror. Push to a feature branch and open a PR; ' +
+        'use --force-with-lease only on your own feature branch.',
+    );
+}
+
+main();

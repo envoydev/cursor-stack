@@ -1,0 +1,5 @@
+VERIFIED the five ported guards, their new test suite and the three rules whose hook claim was false here
+authorized: "hook next"
+head: 807cbd3
+spec: 8 files - hooks/guard-{catastrophic-rm,protected-force-push,read-whole-file,unapproved-dispatch,ungated-commit}.js, scripts/guard-hooks.test.js, package.json, CLAUDE.md, plus 3 rules corrected
+live-probe: npm test green - lint clean (76 skills, 43 agents, 19 rules, 5 hooks, twins + HTML in sync) and 7 behavior tests over 30 assertions driving each hook through the real Cursor stdin/stdout contract

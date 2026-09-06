@@ -41,10 +41,15 @@ Invariants).
   `beforeShellExecution` (`guard-protected-force-push.js`, `guard-catastrophic-rm.js`,
   `guard-ungated-commit.js`), `guard-read-whole-file.js` on both `beforeReadFile` and
   `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`. Each answers
-  an allow/deny permission on stdout. Two peer guards have no Cursor home and are deliberately
+  an allow/deny permission on stdout, and appends one JSONL row per BLOCK under `<docs-path>/hook-blocks/` - a block costs its denial plus the retried turn, so the block RATE is the number that says a gate earns its keep. `guard-ungated-commit` gates PUBLISHING too (`<docs-path>/flow/PUSH-GATE`, same five-line receipt; `CURSOR_PUSH_GATE=0` turns that half off where the remote is already gated); its two receipt checks that read the session TRANSCRIPT fail open here by construction - Cursor sends none - which the hook header states rather than leaving to a reader to assume. Two peer guards have no Cursor home and are deliberately
   absent: a stop-contract gate (the `stop` hook cannot block and never receives the response
   text, and there is no question tool to gate) and usage instrumentation (its analyzer reads a
   transcript format Cursor does not produce).
+- `scripts/guard-hooks.test.js` - behavior tests for the five guards (`npm test` runs the lint then
+  these), driving each hook the way Cursor does: payload JSON on stdin, permission read off stdout.
+  They exist because the guards are PORTED, and a port is exactly where a gate quietly stops gating -
+  one of them pins a bug the port itself surfaced, where an absolute in-repo docs root made every
+  conformant receipt fail its own file count.
 - `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins), dependency-free
   by design: `.sh`/`.ps1` twin parity (SKILLS set + order, MCPS, no PLUGINS), on-disk agents/rules/hooks
   == the manifest arrays, `skills/` dirs == the manifest entries (each with a `SKILL.md` whose

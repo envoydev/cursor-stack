@@ -4,3 +4,7 @@ node_modules/
 # Machine-local Claude Code session config (local plugin toggles etc.) - never for this
 # public repo. CLAUDE.md at the root stays tracked; only the .claude/ dir is ignored.
 .claude/
+
+# Session gate receipts (COMMIT-GATE, PUSH-GATE, APPROVAL) a local run writes under the docs root -
+# per-session state, never repo content.
+.cursor/docs/flow/

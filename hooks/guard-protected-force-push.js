@@ -262,7 +262,7 @@ function main()
 
     deny(
         'Blocked a force-push or deletion of a protected branch (main / master / develop).',
-        'Rewriting or deleting a shared branch (main/master/develop) is forbidden (AGENTS.md) - ' +
+        'Rewriting or deleting a shared branch (main/master/develop) is forbidden - a house rule enforced here, no prose copy to consult - ' +
         'no force-push, branch deletion, or --mirror. Push to a feature branch and open a PR; ' +
         'use --force-with-lease only on your own feature branch.',
     );

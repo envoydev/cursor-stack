@@ -1,0 +1,105 @@
+---
+name: project-commit-checkpoint
+description: "Use before any non-trivial git commit, git push or gh pr merge - the house pre-commit checkpoint and the publish ceremony: what runs over the diff first (a fresh formatter run, the project-verify-code review, the security review on auth/crypto/secrets/payment/data-access paths), which diffs are exempt, and the COMMIT-GATE and PUSH-GATE receipts the guard-ungated-commit hook reads. Triggers on commit this, ready to commit, push it, open the PR, merge the PR, or that hook's denial naming this skill. NOT the review itself (project-verify-code), the commit-message shape (baseline-git owns it), or a trivial diff the hook already lets through."
+---
+
+# Commit checkpoint - the gate before a commit or a publish
+
+The protocol `baseline-git.mdc` points at: what runs before a non-trivial commit, the exemptions, the receipt the `guard-ungated-commit` hook reads at commit time, and the same ceremony for `git push` / `gh pr merge`. It loads when a commit or a publish is the next act, or when the hook's denial names it, instead of riding every message in an always-on rule. The commit-message shape and the branch discipline stay in the rule. The measurements behind these rules live in `references/evidence.md` - an audit appendix, not a run-time load.
+
+## Pre-commit checkpoint
+
+On any non-trivial diff, before committing or presenting: run the formatter, then the house
+review `project-verify-code` - read `.cursor/skills/project-verify-code/SKILL.md` and follow it
+when it is not already loaded, so the gate holds in autonomous flows too (`/review` is a user-run
+parallel sweep, not this gate; `/simplify` applies its quality findings in place) - plus the
+security review below when the diff touches auth, crypto, secrets, payment or data-access paths
+(`baseline-security.mdc` owns the trigger), plus any diff gates named in the project's `AGENTS.md`
+- then satisfy the Definition-of-done gate. Findings caught here land in the same commit; found
+later they become fixup noise or shipped defects. Skip for typos / one-line / formatting-only
+diffs - and for a diff an equivalent-or-stronger check just cleared: the active quality-loop's own
+dispatched re-verify plus final gate, or the cross-task flow's domain-verifier sign-offs plus the
+`integration-reviewer` final gate (a self-granted skip on any other reasoning is not this
+exemption; the security half has its own narrower carve-out, below). The review half may also run
+as a DISPATCHED domain-verifier pass over exactly this diff - the right call when the chat's
+carried context is already heavy, since the seat reviews from a clean context - and its sign-off
+satisfies the checkpoint the same way. Either way the review is a real run THIS chat: a receipt
+claiming 'project-verify-code inline' with no review actually run here is a replay from memory, not
+the gate - and on this platform the hook cannot corroborate it (its payload carries no transcript),
+so this sentence is the only thing that binds. The formatter half is never skipped, and it must be
+FRESH: a formatter run from earlier in the chat does not cover files edited since - re-run it after
+the last edit, before the commit. One unformatted commit is a red CI run and a fixup commit. A
+quality-loop stage-boundary commit may exceed the one-logical-change size guidance when its stages
+share touched files - name the stages in the commit body rather than splitting an unverifiable
+diff.
+
+### The security half
+
+`baseline-security.mdc` owns the trigger (crypto / secret / auth / payment / data-access work), the
+honesty rules and the `VERIFIED` bar; this is how the review runs. **Do the scoped review yourself,
+first:** compute `git diff HEAD` (or the staged diff, or `git diff <base>..HEAD` for a range) and
+apply the vulnerability checklist to exactly that - a read-only general-purpose seat where dispatch
+exists, inline otherwise, and inline inside a stamped flow where the dispatch guard blocks generic
+seats. Feed it the FULL change set - `git add -N .` with the `git reset -q` chained into the SAME
+shell call - so untracked files appear in the diff and the intent-to-add entries never outlive it.
+
+`/review` is the UNBOUNDED route, and the bound is not yours to set: it recomputes a whole-branch
+diff whatever base it is handed, so an explicit base does not scope it, and a branch level with
+origin on a clean tree overflows the same way - 'long-lived branch' is not the trigger either.
+Reach for it only when the whole branch really is the review scope and the diff is small.
+
+The checkpoint exemption above skips this half only when the gate that cleared the diff carried a
+security pass - the `integration-reviewer` gate does, the quality loop's does not, so a loop diff on
+these paths still runs the review before `VERIFIED`.
+
+## The receipt
+
+The checkpoint ends by writing its receipt: `<docs-path>/flow/COMMIT-GATE`, five lines -
+
+```
+VERIFIED <what was reviewed, one phrase>
+authorized: "<the user's words asking for THIS commit, verbatim>"
+head: <the sha the review ran against>
+spec: <N files - the set it covered>
+live-probe: <what was actually run, or NOT RUN - <reason>>
+```
+
+(the quality-loop and cross-task gate exemptions count as VERIFIED - name the loop or gate); or
+`WAIVED - "<the user's words, verbatim>"` alone on their explicit waiver - 'commit it' is an
+instruction to commit, never a waiver of the review. Each line answers a way the receipt once
+passed while recording nothing: the VERIFIED line proves the review ran, `authorized:` proves the
+user asked, `head:` proves it reviewed THIS tree, `spec:` proves it covered the whole diff and
+`live-probe:` proves it ran the thing. The quoted words must carry a commit verb and must not be an
+option label this run wrote: consent given by picking an option is spelled `answered: <the chosen
+label>` instead, which is a different claim and reads as one. A review carried from an earlier
+cycle says so: `carried: <cycle id>, reviewed <date>`.
+
+Write the receipt at its ABSOLUTE path under the project root, as its OWN tool call, before the
+call that runs `git commit` - a relative write follows whatever directory the shell drifted to, and
+the gate then reads an absent receipt. The enforcing hook checks the file at commit time, so a
+receipt written inside the same compound command is invisible to a stricter gate and unauditable in
+the ledger. The shipped hook still ACCEPTS the atomic write+commit shape (blocking it would reject
+the receipt discipline itself), so nothing stops you mechanically - which is exactly why the rule is
+the binding one. Own-call receipt, then the commit, then clear it.
+
+The `guard-ungated-commit` hook blocks a non-trivial `git commit` without a fresh receipt. The hook
+judges 'trivial' mechanically - at most 2 files and 15 changed lines - so a prose-exempt diff above
+that bar (a formatting-only sweep) still writes `VERIFIED` naming the exemption; never split a real
+change into small commits to slip under it. Clear the file once the commit lands - after the LAST
+commit when one receipt covers a reviewed batch - a leftover receipt is the stale-stamp failure the
+hook's 2h age cap exists for. A commit in a SIBLING repo gets its own receipt in THAT repo's docs
+root, written and cleared the same way.
+
+## Publishing has the same ceremony
+
+`git push` and `gh pr merge` are where the work leaves this machine - other people and CI get it,
+and a shared branch cannot be un-pushed quietly - so they carry their own receipt,
+`<docs-path>/flow/PUSH-GATE`, in the SAME five-line shape - `VERIFIED <what is being published, one
+phrase>`, `authorized: "<the user's words asking for THIS publish, verbatim>"`, `head:`, `spec:
+<the commit set going out>` and `live-probe:` - or `WAIVED - "<their words>"`. Only the spec differs
+in kind: a publish's spec names what LEAVES the machine, not what is uncommitted here, so it is
+required and never counted against the working tree. Say what is going out and to which branch, get
+the answer, write the receipt as its own call, publish, clear it. `guard-ungated-commit` enforces
+this half too. A push that publishes nothing - a dry run, or a branch already level with its
+upstream - is never gated, and a repo whose remote is already gated by branch protection or a
+required review turns the half off for good with `CURSOR_PUSH_GATE=0` in the environment.

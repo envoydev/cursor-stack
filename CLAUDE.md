@@ -20,7 +20,7 @@ Invariants).
   `AGENTS.md` is filled in from (Cursor reads `AGENTS.md`).
 - `skills/` - the 76 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
   `SKILL.md`), copied into a project's `.cursor/skills/` out of the run's source snapshot. The
-  18 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
+  19 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
   repo-level skills: the skill loads only on an explicit `/name`).
 - `agents/` - the 43 Cursor-contract subagents, copied into a project's `.cursor/agents/`.
   Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so they keep the full orchestration
@@ -30,22 +30,22 @@ Invariants).
   a `readonly` bool), no frontmatter `skills:` preload (each seat is told to READ the SKILL.md
   files it needs), `superpowers` optional via `/add-plugin`, and no hard-disable of
   auto-delegation.
-- `rules/` - 19 `.mdc` rules copied into a project's `.cursor/rules/`: six always-on
+- `rules/` - 18 `.mdc` rules copied into a project's `.cursor/rules/`: six always-on
   `baseline-*.mdc` (`alwaysApply` - interaction / quality-gates / security / git / navigation /
   docs-root, whose `__DOCS_ROOT__` line the installer stamps) + nine glob-auto-attaching convention
   rules (csharp / typescript / javascript / sql / angular / angular-styling / wpf / winforms /
   devops) + `markdown-docs.mdc` (a trigger patch: the doc skills' keywords miss a plain `.md`
   content edit) + the two repair routers (`dotnet-` / `angular-repair-agents.mdc`: a red build or
-  suite goes to a resolver seat) + the always-on `ponytail.mdc`.
-- `hooks/` - five guards in Cursor's hook contract, wired via `.cursor/hooks.json`: three on
+  suite goes to a resolver seat).
+- `hooks/` - six guards in Cursor's hook contract, wired via `.cursor/hooks.json`: three on
   `beforeShellExecution` (`guard-protected-force-push.js`, `guard-catastrophic-rm.js`,
   `guard-ungated-commit.js`), `guard-read-whole-file.js` on both `beforeReadFile` and
-  `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`. Each answers
-  an allow/deny permission on stdout, and appends one JSONL row per BLOCK under `<docs-path>/hook-blocks/` - a block costs its denial plus the retried turn, so the block RATE is the number that says a gate earns its keep. `guard-ungated-commit` gates PUBLISHING too (`<docs-path>/flow/PUSH-GATE`, same five-line receipt; `CURSOR_PUSH_GATE=0` turns that half off where the remote is already gated); its two receipt checks that read the session TRANSCRIPT fail open here by construction - Cursor sends none - which the hook header states rather than leaving to a reader to assume. Two peer guards have no Cursor home and are deliberately
+  `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`, and `guard-secret-value.js` on `preToolUse` + `beforeShellExecution` + `beforeReadFile` (a credential dump is rewritten to its redacted form where `preToolUse` accepts `updated_input`, denied elsewhere). Each answers
+  an allow/deny permission on stdout, and appends one JSONL row per BLOCK under `<docs-path>/hook-blocks/` - a block costs its denial plus the retried turn, so the block RATE is the number that says a gate earns its keep. `guard-ungated-commit` gates PUBLISHING too (`<docs-path>/flow/PUSH-GATE`, same five-line receipt; `CURSOR_PUSH_GATE=0` turns that half off where the remote is already gated); its two receipt checks that read the session TRANSCRIPT fail open here by construction - a Cursor transcript carries neither shape - which the hook header states rather than leaving to a reader to assume. Two peer guards have no Cursor home and are deliberately
   absent: a stop-contract gate (the `stop` hook cannot block and never receives the response
   text, and there is no question tool to gate) and usage instrumentation (its analyzer reads a
   transcript format Cursor does not produce).
-- `scripts/guard-hooks.test.js` - behavior tests for the five guards (`npm test` runs the lint then
+- `scripts/guard-hooks.test.js` - behavior tests for the six guards (`npm test` runs the lint then
   these), driving each hook the way Cursor does: payload JSON on stdin, permission read off stdout.
   They exist because the guards are PORTED, and a port is exactly where a gate quietly stops gating -
   one of them pins a bug the port itself surfaced, where an absolute in-repo docs root made every
@@ -129,6 +129,11 @@ Invariants).
 
 - The installer regenerates `.cursor/mcp.json` / `hooks.json` / rules on every run - fix the
   source here, not the output in a consuming project.
+- A renamed or removed skill, rule or agent goes into BOTH twins' retired lists
+  (`RETIRED_SKILLS` / `RETIRED_RULES` / `RETIRED_AGENTS`) in the same commit. The copy loops only
+  touch manifest names, so without the list a leftover keeps shipping forever - a stale
+  `alwaysApply` rule loads into every chat beside its replacement. Every run prunes exactly those
+  names. A retired hook also needs its `hooks.json` entry dropped, which no list does yet.
 - Hooks, rules, and agents are copied from the run's source clone of `main` - a change ships only
   once committed + pushed. Check `.cursor/cursor-stack.stamp` in a consuming project to see which
   commit its tree actually came from.

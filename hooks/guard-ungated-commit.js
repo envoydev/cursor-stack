@@ -25,10 +25,11 @@
 //
 // PLATFORM NOTE. Two of the receipt's corroboration checks read the session TRANSCRIPT to tell the
 // user's own words from the model's: whether the `authorized:` quote is character-identical to an
-// option label this run wrote, and whether a review skill actually ran. Cursor's hook payload
-// carries no transcript, so `tail()` below is empty by construction and both checks fail OPEN -
-// they never fire and never block. Everything judged from the receipt TEXT and from git state is
-// identical to the peer stack's gate. That gap is real; do not paper over it in a rule.
+// option label this run wrote, and whether a review skill actually ran. Neither shape exists in a
+// Cursor transcript (there is no Skill tool and no option-label ask), so `tail()` below is empty by
+// construction and both checks fail OPEN - they never fire and never block. Everything judged from
+// the receipt TEXT and from git state is identical to the peer stack's gate. That gap is real; do
+// not paper over it in a rule.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -229,24 +230,16 @@ const QUOTED = /["'“‘”’]([^"'“‘”’]*)["'“‘”’]/;
 // The transcript tail, read once and shared by the two checks that need it. 256KB is the same
 // window every other guard reads; a receipt is minted within a turn or two of its evidence.
 let _tail;
-// Cursor sends no transcript with a hook payload, so this is empty by construction and the two
-// checks built on it (own-option-label, review-skill-ran) fail open. Kept in the same shape as the
-// peer stack's so the two files stay diffable when Cursor grows the field.
+// Empty by construction on Cursor, and deliberately so: the payload may name a `transcript_path`,
+// but a Cursor transcript records a skill as a READ of its SKILL.md and has no option-label ask, so
+// reading it would hand the two checks below a document they cannot judge. Worse than useless -
+// `skillCallRan()` reads an absent Skill row as 'the review never ran', and it BLOCKED every
+// conformant receipt naming project-verify-code, the review this gate's own denial prescribes
+// (reproduced: a five-line VERIFIED receipt denied with and without a transcript). Kept in the peer
+// stack's shape so the two files stay diffable.
 function tail() {
   if (_tail !== undefined) return _tail;
   _tail = '';
-  try {
-    const tp = payload.transcript_path;
-    if (tp) {
-      const size = fs.statSync(tp).size;
-      const start = Math.max(0, size - 256 * 1024);
-      const fd = fs.openSync(tp, 'r');
-      const buf = Buffer.alloc(size - start);
-      fs.readSync(fd, buf, 0, buf.length, start);
-      fs.closeSync(fd);
-      _tail = buf.toString('utf8');
-    }
-  } catch { _tail = ''; }
   return _tail;
 }
 // Is this exact string one of the assistant's own AskUserQuestion option labels? Compared with the
@@ -263,7 +256,8 @@ function isOwnOptionLabel(span) {
   }
   return false;
 }
-const skillCallRan = () => /"name"\s*:\s*"Skill"/.test(tail());
+// An empty tail is UNKNOWABLE, not a negative: only a transcript that can show the call judges it.
+const skillCallRan = () => !tail() || /"name"\s*:\s*"Skill"/.test(tail());
 
 // One judge, two routes. The receipt written as its own file and the receipt written inside the
 // same command as the act are the SAME document, so they answer to the same contract - otherwise
@@ -483,7 +477,7 @@ process.stderr.write(
     : c.problem
       ? `Blocked: git commit - the gate receipt at ${c.gate} does not hold: ${c.problem}.\n`
       : `Blocked: git commit on a non-trivial diff without the pre-commit gate receipt.\n`) +
-    `The checkpoint (baseline-git.mdc) runs BEFORE a non-trivial commit: the formatter, then\n` +
+    `The checkpoint (the project-commit-checkpoint skill - load it) runs BEFORE a non-trivial commit: the formatter, then\n` +
     `the house review project-verify-code - plus /review when the diff touches\n` +
     `auth/crypto/secrets/payment/data-access paths (baseline-security.mdc). When those pass, write\n` +
     `${c.gate}\n` +

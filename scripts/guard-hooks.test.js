@@ -147,3 +147,189 @@ test('guard-ungated-commit: publishing carries the same ceremony', () => {
     'the half switches off where the remote is already gated');
   assert.equal(inRepo(dir, 'ls -la'), 'allow', 'an unrelated command is never judged');
 });
+
+// --- the ports that followed: each case below pins a peer-stack fix brought across --------------
+function askBody(hook, payload, env = {}) {
+  const r = spawnSync(process.execPath, [path.join(HOOKS, hook)], {
+    input: JSON.stringify(payload),
+    encoding: 'utf8',
+    env: { ...process.env, CURSOR_DOCS_PATH: path.join(TMP, 'docs'), ...env },
+  });
+  try { return JSON.parse(r.stdout); } catch { return { permission: `UNPARSEABLE: ${r.stdout}${r.stderr}` }; }
+}
+
+test('guard-catastrophic-rm: the gate reads the PATHSPEC, and honours a discard receipt', () => {
+  // It asked only 'is the tree dirty', which made its own prescribed escape - 'name the ONE file to
+  // revert instead of the whole tree' - unreachable: `git restore .gitignore` was denied with all
+  // seven dirty files listed, six of which the command never touched (measured on the peer stack).
+  const RM = 'guard-catastrophic-rm.js';
+  const dir = repo(0);
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+  fs.writeFileSync(path.join(dir, 'b.txt'), 'two\n');
+  spawnSync('git', ['-C', dir, 'add', '-A']);
+  spawnSync('git', ['-C', dir, 'commit', '-qm', 'two files']);
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'one changed\n'); // only a.txt is dirty
+  const docs = path.join(dir, '.cursor', 'docs');
+  const rm = (command) => askBody(RM, { command, cwd: dir }, { CURSOR_DOCS_PATH: docs });
+
+  assert.equal(rm('git restore b.txt').permission, 'allow', 'a CLEAN path has nothing to lose, dirty tree or not');
+  // argv, never a shell string: a single-quoted pathspec reached cmd.exe on Windows as a file
+  // literally named 'a.txt' with the quotes, found clean, and passed (the peer's windows CI job).
+  assert.equal(rm('git restore "a.txt"').permission, 'deny', 'the dirty path it names is still blocked, quoted or not');
+  assert.equal(rm('git checkout -- .').permission, 'deny', 'the whole tree keeps the old arithmetic');
+  const denied = rm('git restore a.txt');
+  assert.match(denied.agent_message, /the path\(s\) this command names/, 'the denial says which scope it judged');
+  assert.match(denied.agent_message, /DISCARD-ALLOW/, 'and names the receipt that honours a discard');
+  assert.match(denied.agent_message, /ONE question to the user/, 'ending in an ask the user answers');
+  assert.doesNotMatch(denied.agent_message, /AGENTS\.md|AskUserQuestion/, 'no prose copy to cite, no tool this platform lacks');
+
+  const flow = path.join(docs, 'flow');
+  fs.mkdirSync(flow, { recursive: true });
+  // The receipt lives under the docs root, which is itself inside the repo here - so it is an
+  // untracked file of its own; a pathspec command never looks at it.
+  fs.writeFileSync(path.join(flow, 'DISCARD-ALLOW'), '# the user answered Discard it\na.txt\n');
+  assert.equal(rm('git restore a.txt').permission, 'allow', 'the receipt is honoured for the path it names');
+  assert.equal(rm('git checkout -- .').permission, 'deny', 'but it does not cover the whole tree');
+  fs.writeFileSync(path.join(flow, 'DISCARD-ALLOW'), '*\n');
+  assert.equal(rm('git checkout -- .').permission, 'allow', 'the * line does');
+  const old = new Date(Date.now() - 9 * 3600 * 1000);
+  fs.utimesSync(path.join(flow, 'DISCARD-ALLOW'), old, old);
+  assert.equal(rm('git checkout -- .').permission, 'deny', 'a receipt older than 8h reads as absent');
+});
+
+test('guard-protected-force-push: the denial cites no prose copy of the rule', () => {
+  const r = askBody('guard-protected-force-push.js', { command: 'git push --force origin main' });
+  assert.equal(r.permission, 'deny');
+  assert.doesNotMatch(r.agent_message, /AGENTS\.md/, 'the template carries no copy of this rule to consult');
+});
+
+// Read-guard fixtures: a large and a small source file, and a scratch session per test.
+const SRC = fs.mkdtempSync(path.join(TMP, 'src-'));
+const BIG = path.join(SRC, 'big.js');
+fs.writeFileSync(BIG, Array.from({ length: 400 }, (_, i) => `const v${i} = ${i}; // function ${i}`).join('\n') + '\n');
+const SMALL = path.join(SRC, 'small.js');
+fs.writeFileSync(SMALL, 'module.exports = 1;\n');
+const RW = 'guard-read-whole-file.js';
+const rwShell = (command, extra = {}) => ask(RW, { hook_event_name: 'beforeShellExecution', command, cwd: TMP, ...extra });
+let convo = 0;
+const rwRead = (file_path, content, conversation_id = `c-${process.pid}-${++convo}`) =>
+  ask(RW, { hook_event_name: 'beforeReadFile', file_path, content, conversation_id });
+
+test('guard-read-whole-file: the extension is judged against the PATH, not the whole line', () => {
+  // Every one of these was a replayed false positive on the peer stack: the extension was tested
+  // against the WHOLE compound command, and the sweep test ran above the per-segment loop.
+  assert.equal(rwShell(`ls src/*.js && head -40 ${BIG}`), 'allow', 'an unrelated *.js glob in a SIBLING segment');
+  assert.equal(rwShell(`find . -name "guard-read-whole-file.js" && grep -n THRESHOLD ${BIG} | head -20`), 'allow',
+    'an exact-filename find names ONE file');
+  assert.equal(rwShell('head -n 100000 notes.txt # about Foo.cs'), 'allow', 'a huge head of a NON-gated file');
+  assert.equal(rwShell(`cat ${BIG} > ${path.join(TMP, 'copy.js')}`), 'allow', 'a redirect into a file is a copy, not a dump');
+  assert.equal(rwShell(`cat ${BIG} 2>&1`), 'deny', 'an fd redirect still prints');
+  assert.equal(rwShell('for f in src/*.cs; do cat -n "$f"; done'), 'deny', 'a loop still blocks');
+  assert.equal(rwShell('find . -name "*.cs" -exec cat {} +'), 'deny', 'a globbed find -exec cat still blocks');
+});
+
+test('guard-read-whole-file: an unexpanded $VAR is judged by nobody, and a leading cd moves the anchor', () => {
+  assert.equal(rwShell('cat $R/src/Thing.cs'), 'allow', 'an unexpanded variable target is not judged');
+  assert.equal(rwShell('cat ${SRC}/Thing.ts'), 'allow', 'the braced spelling either');
+  assert.equal(rwShell(`R=${SRC} && cat $R/big.js`), 'deny', 'a same-command assignment is expanded and judged');
+  assert.equal(rwShell(`cd ${SRC} && cat big.js`), 'deny', 'a cd-anchored relative dump is still caught');
+  assert.equal(rwShell(`cd ${SRC} && cat small.js`), 'allow', 'and a small one still passes');
+});
+
+test('guard-read-whole-file: a runtime expression that only COUNTS is not a dump', () => {
+  // Measured on the peer stack: a `node -e` whose whole output was `.match(...).length` was denied,
+  // killing a five-probe compound command and costing a 107k-token retry.
+  assert.equal(rwShell(`node -e 'console.log(require("fs").readFileSync("${BIG}","utf8").match(/function/g).length)'`), 'allow', 'a count');
+  assert.equal(rwShell(`node -e 'console.log(require("fs").readFileSync("${BIG}","utf8").split("\\n").length)'`), 'allow', 'a line count');
+  assert.equal(rwShell(`node -e 'console.log(require("fs").readFileSync("${BIG}","utf8"))'`), 'deny', 'printing the content still is');
+  assert.equal(rwShell(`node -e 'console.log(require("fs").readFileSync("${SMALL}","utf8"))'`), 'allow', 'a small file is fine, like cat');
+});
+
+test('guard-read-whole-file: a sweep over .md files is a sweep; one named .md file is not', () => {
+  // 84.1KB from 35 SKILL.md files in one call, 120KB from 46 in another (peer stack).
+  assert.equal(rwShell('for f in .cursor/skills/*/SKILL.md; do cat "$f"; done'), 'deny', 'a loop over every SKILL.md');
+  assert.equal(rwShell('find .cursor/skills -name SKILL.md -exec cat {} \;'), 'deny', 'find -exec over the same set - a literal .md name repeats per directory');
+  assert.equal(rwShell(`cat ${path.join(__dirname, '..', 'CLAUDE.md')}`), 'allow', 'one named markdown file is a fine read');
+});
+
+test('guard-read-whole-file: beforeReadFile judges the whole-file SHAPE, merges coverage, and gates any oversized file', () => {
+  const text = fs.readFileSync(BIG, 'utf8');
+  const lines = text.split('\n');
+  const slice = (a, b) => lines.slice(a, b).join('\n');
+  assert.equal(rwRead(BIG, text), 'deny', 'content covering the whole file');
+  assert.equal(rwRead(BIG, slice(0, 220)), 'allow', 'a window past the threshold but well short of the file is targeted');
+
+  const c = `c-merge-${process.pid}`;
+  assert.equal(rwRead(BIG, slice(0, 120), c), 'allow', 'first 30%');
+  assert.equal(rwRead(BIG, slice(0, 120), c), 'allow', 're-reading the SAME range is one range, not two');
+  assert.equal(rwRead(BIG, slice(120, 240), c), 'allow', 'second 30% - at the cap');
+  assert.equal(rwRead(BIG, slice(240, 360), c), 'deny', 'the third reconstructs the file');
+  assert.equal(rwRead(BIG, slice(240, 250), c), 'deny', 'the blocked read was not counted, but the cap already holds');
+  assert.equal(rwRead(BIG, slice(240, 360), `${c}-other`), 'allow', 'the cap is per conversation');
+
+  // A 93KB spill read WHOLE, twice, for 99,277 chars on the peer stack - the extension was not gated.
+  const spill = path.join(SRC, 'persisted-output.txt');
+  fs.writeFileSync(spill, 'x'.repeat(70 * 1024));
+  assert.equal(rwRead(spill, fs.readFileSync(spill, 'utf8')), 'deny', 'an oversized file read whole, whatever its extension');
+  const log = path.join(SRC, 'big.log');
+  fs.writeFileSync(log, Array.from({ length: 3000 }, (_, i) => `line ${i} ${'y'.repeat(30)}`).join('\n'));
+  assert.equal(rwRead(log, fs.readFileSync(log, 'utf8').split('\n').slice(0, 50).join('\n')), 'allow', 'a ranged read of one passes');
+  assert.equal(rwRead(path.join(__dirname, '..', 'CLAUDE.md'), fs.readFileSync(path.join(__dirname, '..', 'CLAUDE.md'), 'utf8')), 'allow',
+    'a small non-source file is untouched');
+});
+
+test('guard-read-whole-file: a block appends one ledger row', () => {
+  const docs = fs.mkdtempSync(path.join(TMP, 'rw-docs-'));
+  assert.equal(ask(RW, { hook_event_name: 'beforeShellExecution', command: `cat ${BIG}`, cwd: TMP, session_id: 'rw' }, { CURSOR_DOCS_PATH: docs }), 'deny');
+  const rows = fs.readFileSync(path.join(docs, 'hook-blocks', 'rw.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].hook, RW);
+  assert.equal(rows[0].event, 'beforeShellExecution');
+});
+
+test('guard-unapproved-dispatch: a SYMBOL question never goes to the grep-shaped explore seat', () => {
+  // Measured on the peer stack: a C# symbol hunt handed to a search seat came back as grep hits.
+  const root = fs.mkdtempSync(path.join(TMP, 'proj-'));
+  const docs = path.join(root, '.cursor', 'docs');
+  const disp = (subagent_type, task) => askBody('guard-unapproved-dispatch.js',
+    { subagent_type, task, workspace_roots: [root], session_id: 'disp' }, { CURSOR_DOCS_PATH: docs });
+  const denied = disp('explore', 'Who calls OrderService.Submit across the solution?');
+  assert.equal(denied.permission, 'deny', 'who calls');
+  assert.match(denied.agent_message, /serena find_symbol/, 'sent back to serena, inline');
+  assert.equal(disp('explore', 'find the definition of RetryPolicy').permission, 'deny', 'a definition lookup');
+  assert.equal(disp('explore', 'map the auth module and list the files that configure logging').permission, 'allow',
+    'a broad sweep with no symbol question');
+  assert.equal(disp('generalPurpose', 'update every usages of the old logger').permission, 'allow',
+    'generalPurpose may be a named seat on this platform, so it is not judged');
+  const rows = fs.readFileSync(path.join(docs, 'hook-blocks', 'disp.jsonl'), 'utf8').trim().split('\n');
+  assert.equal(rows.length, 2, 'one ledger row per block');
+
+  const stale = disp('generalPurpose', 'run aspnet-implementer on task 1');
+  assert.equal(stale.permission, 'deny', 'no stamp');
+  fs.mkdirSync(path.join(docs, 'flow'), { recursive: true });
+  fs.writeFileSync(path.join(docs, 'flow', 'APPROVAL'), 'APPROVED plan-1 - "go"\n');
+  const old = (Date.now() - 9 * 3600 * 1000) / 1000;
+  fs.utimesSync(path.join(docs, 'flow', 'APPROVAL'), old, old);
+  assert.match(disp('generalPurpose', 'run aspnet-implementer on task 1').agent_message, /older than 8h, or written before this session began/,
+    'a stale stamp says both ways it can be stale');
+});
+
+test('guard-ungated-commit: a receipt naming the review skill is not refused for a transcript this platform cannot show', () => {
+  // The peer's check reads a `"name":"Skill"` row out of the transcript. Cursor records a skill as
+  // a read of its SKILL.md, so that row never exists here - and an absent row read as 'the review
+  // never ran' blocked every conformant receipt naming project-verify-code, the very review this
+  // gate's own denial prescribes (reproduced with and without a transcript_path).
+  const dir = repo(4);
+  receipt(dir, 'COMMIT-GATE',
+    `VERIFIED project-verify-code over the fixtures\nauthorized: "commit it"\nhead: ${headOf(dir)}\nspec: 4 files\nlive-probe: tests green\n`);
+  assert.equal(inRepo(dir, 'git commit -m x'), 'allow', 'no transcript');
+  const tp = path.join(TMP, 'cursor-transcript.jsonl');
+  fs.writeFileSync(tp, '{"type":"tool_call","tool_call":{"readToolCall":{"args":{"path":"skills/project-verify-code/SKILL.md"}}}}\n');
+  assert.equal(ask('guard-ungated-commit.js', { command: 'git commit -m x', cwd: dir, transcript_path: tp },
+    { CURSOR_DOCS_PATH: path.join(dir, '.cursor', 'docs') }), 'allow', 'a Cursor-shaped transcript');
+
+  const bare = repo(4);
+  const r = askBody('guard-ungated-commit.js', { command: 'git commit -m x', cwd: bare }, { CURSOR_DOCS_PATH: path.join(bare, '.cursor', 'docs') });
+  assert.equal(r.permission, 'deny');
+  assert.match(r.agent_message, /project-commit-checkpoint skill/, 'the denial names where the checkpoint protocol lives');
+});

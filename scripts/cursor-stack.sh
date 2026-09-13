@@ -22,6 +22,10 @@
 #                  `gh auth login` when unauthenticated. e.g.:
 #                    bash cursor-stack.sh install github-cli
 #                    bash cursor-stack.sh install work github-cli
+#   sentry-token | sentry-oauth -> the sentry MCP's auth. sentry-token (the default on a fresh entry)
+#                  sends 'Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN}' - a Sentry API token
+#                  you export in the OS environment; sentry-oauth writes NO header, so Cursor runs
+#                  Sentry's OAuth sign-in on first connect. Omitted, an existing entry keeps its mode.
 #   skills-only -> run only the skill install/update step, then exit (testability - skips
 #                  prerequisites/mcps/hooks/rules/agents)
 #
@@ -40,7 +44,7 @@ set -euo pipefail
 ACTION="${1:-}"
 case "$ACTION" in
   install|update) ;;
-  *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [skills-only]" >&2; exit 1 ;;
+  *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]" >&2; exit 1 ;;
 esac
 
 # This script provisions the Cursor agent.
@@ -52,22 +56,25 @@ AGENT="cursor"
 SPACE=""
 INSTALL_GITHUB_CLI=false
 CONTEXT7_MODE="remote"
+SENTRY_AUTH=""        # '' = keep an existing entry's mode, token on a fresh one (resolved in set_cursor_mcps)
 SKILLS_ONLY=false
 for extra in "${@:2}"; do
   case "$extra" in
     github-cli) INSTALL_GITHUB_CLI=true ;;
     context7-local) CONTEXT7_MODE="local" ;;
     context7-remote) CONTEXT7_MODE="remote" ;;
+    sentry-token) SENTRY_AUTH="token" ;;
+    sentry-oauth) SENTRY_AUTH="oauth" ;;
     skills-only) SKILLS_ONLY=true ;;
     *)
       # Any other single word is the SPACE (memory-DB namespace). Reserved flags are matched above;
       # a second bare word, or a disallowed charset, is an error.
       if [ -n "$SPACE" ]; then
-        echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
+        echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
       fi
       case "$extra" in
         [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
-          echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
+          echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
       esac
       SPACE="$extra" ;;
   esac
@@ -173,11 +180,13 @@ SKILLS=(
   "envoydev/cursor-stack|project-solve-cross-task"              # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
   "envoydev/cursor-stack|project-verify-plan"                   # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /review
   "envoydev/cursor-stack|project-verify-code"                   # single-chat, no-dispatch review of an assembled build - the inline alternative to /review: rerun build/test, gate vs plan, RUN the app on failable inputs, trace wire-contract changes to consumers, ranked punch-list
+  "envoydev/cursor-stack|project-commit-checkpoint"             # the pre-commit checkpoint + publish ceremony: fresh formatter, project-verify-code, security review on sensitive paths, the COMMIT-GATE / PUSH-GATE receipts guard-ungated-commit reads; loads when a commit or push is next
   "envoydev/cursor-stack|project-implementer"                   # single-chat build step: execute a verified plan task-by-task (contracts + per-task green gate + inline red-resolution, no dispatch), finish via /review + the done-gate
   "envoydev/cursor-stack|project-solution-design"               # single-chat designer twin: read the architecture, judge where a change fits (extend/refactor/isolate), load the stack skill for traps, decompose into an ordered plan; feeds project-verify-plan
   "envoydev/cursor-stack|project-solve-task"                    # gated single-chat vertical: design -> plan audit -> user approval + build mode -> build -> build review (skippable: project-verify-code inline or the verifier seat) -> done-gate; hard user stop between steps, plan-file + serena-note state survives compaction
   "envoydev/cursor-stack|project-runtime-failure-signatures"    # single-chat diagnoser twin: local-runtime crash signatures (null-ref/DI/deadlock/disposed/config-drift/boundary/HTTP-status) -> where to isolate each; pairs with systematic-debugging
   "envoydev/cursor-stack|project-ci-failure-signatures"         # single-chat CI-diagnoser twin: red-pipeline signatures (compile/restore, green-locally-red-on-runner, quality-gate, signing/release, workflow-config, infra-flake) -> code-vs-environment call + route; pairs with project-runtime-failure-signatures
+  "envoydev/cursor-stack|project-diagnose-failure"              # gated read-only diagnosis from any evidence: triage to a tier -> gather (inline or evidence-gatherer seats) -> prove the root cause -> user fork (report / contracted fix tasks / log points); manual /-only
   "envoydev/cursor-stack|devops"                                # DevOps for the .NET/Angular house: Docker multi-stage/digest-pinned/non-root, GitHub Actions CI/CD, safe expand-contract deploys, secrets/OIDC, Aspire AppHost
   "envoydev/cursor-stack|database-conventions"                  # cross-engine DB conventions + per-engine skill routing
   "envoydev/cursor-stack|database-security"                     # SQL/data-layer security: parameterized-only injection, least-privilege DB accounts, row-level security, connection-string secrets, encryption, audit
@@ -192,8 +201,6 @@ SKILLS=(
   "envoydev/cursor-stack|angular-material"                      # Angular Material + CDK: selective imports, M3 theming, CDK primitives, harnesses
   "envoydev/cursor-stack|angular-styling"                       # Angular CSS/styling: ViewEncapsulation, :host, ::ng-deep ways-out, design tokens, responsive, a11y styling
   "envoydev/cursor-stack|angular-security"                      # Angular/web frontend security: XSS/DomSanitizer bypass, CSP, CSRF, no-secrets-in-bundle, token storage, SSR/TransferState
-  "envoydev/cursor-stack|frontend"                              # web frontend router: Angular/TS + in-skill design-quality guidance -> mobile
-  "envoydev/cursor-stack|mobile"                                # Ionic/Capacitor router/index over the Angular (angular-conventions) + TypeScript baselines
   "envoydev/cursor-stack|ionic"                                 # house Ionic/Capacitor conventions: UI, nav, lifecycle, permissions, plugin sourcing + wrapping
   "envoydev/cursor-stack|capacitor-release"                     # Ionic/Capacitor release pipeline: cap sync/build, iOS+Android signing, store submission, OTA, versioning, CI, symbols
   "envoydev/cursor-stack|ionic-security"                        # Ionic/Capacitor mobile security: Keychain/Keystore storage, deep-link validation, permissions, cleartext/WebView hardening
@@ -304,7 +311,7 @@ MCPS=(
   "playwright|-- npx -y @playwright/mcp${PW_PIN} --user-data-dir \${CLAUDE_PROJECT_DIR:-.}/.playwright --output-dir \${CLAUDE_PROJECT_DIR:-.}/.playwright/screenshots" # drive a real browser for visual checks / web app verification
   "chrome-devtools|-- npx chrome-devtools-mcp@latest" # OPT-IN browser/extension debug; drives a full Chrome (heavy) - comment out outside web projects; no WS-frame payloads; pin a version
   "appium-mcp|-- npx -y appium-mcp@latest" # OPT-IN native mobile E2E (official Appium MCP); embedded UiAutomator2/XCUITest drivers, needs Xcode and/or Android SDK + Java (heavy) - comment out outside Capacitor/Ionic mobile projects; pin a version
-  "sentry|@HTTP@" # OPT-IN Sentry error monitoring - hosted remote MCP (mcp.sentry.dev); auth via an Authorization: Bearer ${env:SENTRY_ACCESS_TOKEN} header in .cursor/mcp.json (OS env); comment out where the project has no Sentry
+  "sentry|@HTTP@" # OPT-IN Sentry error monitoring - hosted remote MCP (mcp.sentry.dev); auth via an Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN} header in .cursor/mcp.json (OS env), or no header under 'sentry-oauth'; comment out where the project has no Sentry
   "$MEMORY_ENTRY"  # memory: cross-project recall - the subagent handoff runs on serena; comment out in a standalone project
   "$CONTEXT7_ENTRY"                           # up-to-date library/framework/SDK docs (beats recalled API knowledge)
 )
@@ -318,6 +325,8 @@ MCPS=(
 #   - guard-read-whole-file      -> beforeReadFile + beforeShellExecution (a whole-file read of a large
 #                                   source file, by tool or by shell cat, goes through serena first).
 #   - guard-unapproved-dispatch  -> subagentStart (an implementer fan-out needs the recorded approval).
+#   - guard-secret-value         -> preToolUse + beforeShellExecution + beforeReadFile (a credential is read for
+#                                   presence, never its value: a dump is redacted or denied, judged by content).
 # Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot block
 # and never sees the response text, and there is no question tool to gate) and usage instrumentation
 # (its analyzer reads a transcript format Cursor does not produce).
@@ -330,6 +339,9 @@ CURSOR_HOOKS=(
   "guard-read-whole-file.js::beforeReadFile"
   "guard-read-whole-file.js::beforeShellExecution"
   "guard-unapproved-dispatch.js::subagentStart"
+  "guard-secret-value.js::preToolUse"
+  "guard-secret-value.js::beforeShellExecution"
+  "guard-secret-value.js::beforeReadFile"
 )
 # A rule entry is "name" (copied from the source clone's rules/) or "name|url" (fetched from that
 # url - the form for a third-party rule we would reference rather than vendor; currently unused,
@@ -353,11 +365,9 @@ CURSOR_RULES=(
   "angular-styling-conventions.mdc"      # scss/css -> angular-styling (Angular/Ionic projects only)
   "csharp-conventions.mdc"               # c#: .cs -> csharp (backend, desktop, console)
   "wpf-conventions.mdc"                  # wpf: .xaml -> dotnet-wpf
-  "winforms-conventions.mdc"             # winforms: .Designer.cs -> dotnet-winforms
+  "winforms-conventions.mdc"             # winforms: .Designer.cs + *Form.cs code-behind -> dotnet-winforms
   "sql-conventions.mdc"                  # sql: .sql -> database-conventions
-  "devops-conventions.mdc"               # rest (devops): Dockerfile/compose/workflow -> devops
-  # Minimal-code discipline, vendored as a rule.
-  "ponytail.mdc"                         # ponytail 'lazy senior dev' minimal-code rule (alwaysApply)
+  "devops-conventions.mdc"               # rest (devops): Dockerfile/compose/workflow/deploy script -> devops
 )
 
 # (6) Subagents (cursor): Cursor-native specialist agents copied into .cursor/agents/ from the run's
@@ -417,6 +427,17 @@ CURSOR_AGENTS=(
   "winforms-implementer.md"                     # build phase: builds one WinForms task - code + tests
   "winforms-verifier.md"                        # verify phase: gates the WinForms build vs plan + quality
 )
+
+# (7) Retired names - artifacts this stack once installed and no longer ships. Their files left the
+# manifests above, so the copy loops never touch them again: a leftover skill keeps auto-triggering
+# next to its successor, a leftover agent stays dispatchable under its old name, and a leftover
+# alwaysApply rule keeps loading into every chat. Every run (install == update here) removes exactly
+# these names and nothing else - an absent one is a no-op. Extend the matching list whenever a skill,
+# rule or agent is renamed or removed. Unquoted on purpose: the parity lint reads the quoted manifest
+# blocks only.
+RETIRED_SKILLS=(frontend mobile project-task-flow project-task-cycle project-capabilities project-failure-signatures data-security dotnet-error-handling mobile-security)
+RETIRED_RULES=(ponytail.mdc scss-conventions.mdc)
+RETIRED_AGENTS=(angular-solution-designer.md angular-implementer.md angular-verifier.md mobile-solution-designer.md mobile-implementer.md mobile-verifier.md code-analyzer.md issue-diagnoser.md)
 
 # ===========================================================================
 # INSTALL - skills re-add UNCONDITIONALLY (clean copy each run); the .cursor tree is refreshed
@@ -493,7 +514,7 @@ trap cleanup_source EXIT
 # The install is versioned, not the file: Cursor has no per-artifact version field (SKILL.md is
 # name/description/paths/disable-model-invocation/metadata; an agent is name/description/model/
 # readonly/is_background), so a `version:` key would parse nowhere. Instead one stamp names the
-# commit every artifact in this run was copied from - exact for all 112, nothing to hand-bump.
+# commit every artifact in this run was copied from - exact for every one, nothing to hand-bump.
 write_stamp() {
   # No revision -> no stamp. A stamp that names the wrong commit is worse than none, so leave any
   # previous stamp untouched rather than overwrite it with a guess.
@@ -515,10 +536,11 @@ STAMP
 
 install_skills() {
   # git-copy: clone the stack repo (depth 1) and copy each selected skills/<name>/ straight into
-  # .cursor/skills - all 65 house skills live in THIS repo (envoydev/cursor-stack), so a plain copy
+  # .cursor/skills - all house skills live in THIS repo (envoydev/cursor-stack), so a plain copy
   # fully reproduces what the skills CLI used to stage. STRICT independence preserved: the dest is
   # .cursor/skills as real copies, never a dependency on a shared .agents/ store
   # (no separate npx-then-copy step needed any more - this writes .cursor/skills directly).
+  prune_retired_skills
   ensure_source || { log "  !! no source clone - skills not installed"; return 0; }   # fail-soft: skip, never abort
   local name dest entry
   case "$SCOPE" in project) dest="$PWD/.cursor/skills" ;; *) dest="$CONFIG_DIR/skills" ;; esac
@@ -532,6 +554,15 @@ install_skills() {
       log "  !! skill '$name' not found in $SOURCE_REPO_URL"
     fi
   done
+}
+
+prune_retired_skills() {  # drop the RETIRED_SKILLS names under the scope dest (install_skills' own dest)
+  local dest name
+  case "$SCOPE" in project) dest="$PWD/.cursor/skills" ;; *) dest="$CONFIG_DIR/skills" ;; esac
+  for name in ${RETIRED_SKILLS[@]+"${RETIRED_SKILLS[@]}"}; do
+    [ -d "$dest/$name" ] && { rm -rf "${dest:?}/$name"; log "  skill pruned (retired upstream): $name"; }
+  done
+  return 0
 }
 
 set_cursor_mcps() {
@@ -570,7 +601,7 @@ set_cursor_mcps() {
 
   local prog; prog=$(cat <<'PY'
 import json, sys
-path, action = sys.argv[1], sys.argv[2]
+path, action, sentry_auth = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     data = json.load(open(path))
 except Exception:
@@ -583,14 +614,32 @@ for line in sys.stdin.read().splitlines():
     # Skip-if-present on plain install: an MCP
     # already in mcp.json keeps its baked pin (FROZEN until `update` re-resolves and re-writes it).
     # Without this a plain install would re-write the freshly-resolved latest pin and silently bump it.
-    if action == "install" and name in servers:
+    # sentry is the one server with no pin to freeze, so the skip yields to a mode ask and to the
+    # plain-Bearer migration below - an entry written with the old scheme is rewritten on EVERY run.
+    old = servers.get(name) if isinstance(servers.get(name), dict) else None
+    old_hdr = ((old or {}).get("headers") or {}).get("Authorization", "")
+    stale_sentry = name == "sentry" and old is not None and (bool(sentry_auth) or old_hdr.startswith("Bearer "))
+    if action == "install" and name in servers and not stale_sentry:
         print("  cursor mcp " + name + " already configured - skipping")
         continue
     if spec.strip() == "@HTTP@":
         # remote (hosted) server - url/header keyed by name: sentry, else context7
         if name == "sentry":
-            servers[name] = {"url": "https://mcp.sentry.dev/mcp",
-                             "headers": {"Authorization": "Bearer ${env:SENTRY_ACCESS_TOKEN}"}}
+            # Sentry-Bearer is Sentry's scheme for a direct API token; plain Bearer is reserved for the
+            # server's own OAuth-issued tokens and rejects an API token as invalid_token. oauth mode
+            # writes NO header: a set-but-wrong header would disable the sign-in fallback, so the two
+            # modes never mix. No mode asked -> keep a deliberately headerless entry headerless.
+            headerless = old is not None and "mcp.sentry.dev" in str(old.get("url", "")) and not old_hdr
+            mode = sentry_auth or ("oauth" if headerless else "token")
+            if old_hdr.startswith("Bearer "):
+                print("  cursor mcp sentry: migrating the plain Bearer header to Sentry-Bearer")
+                mode = sentry_auth or "token"
+            entry = {"url": "https://mcp.sentry.dev/mcp"}
+            if mode == "token":
+                entry["headers"] = {"Authorization": "Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN}"}
+            servers[name] = entry
+            print("  cursor mcp: sentry (" + mode + ")")
+            continue
         else:
             servers[name] = {"url": "https://mcp.context7.com/mcp",
                              "headers": {"CONTEXT7_API_KEY": "${env:CONTEXT7_API_KEY}"}}
@@ -625,7 +674,7 @@ json.dump(data, open(path, "w"), indent=2); open(path, "a").write("\n")
 print("  cursor mcp.json -> " + path)
 PY
 )
-  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION"
+  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH"
 }
 
 set_cursor_hooks() {
@@ -705,6 +754,9 @@ install_cursor_rules() {
     rules_dir="$HOME/.cursor/rules"
   fi
   mkdir -p "$rules_dir"
+  for file in ${RETIRED_RULES[@]+"${RETIRED_RULES[@]}"}; do
+    [ -f "$rules_dir/$file" ] && { rm -f "$rules_dir/$file"; log "  cursor rule pruned (retired upstream): $file"; }
+  done
   for entry in ${CURSOR_RULES[@]+"${CURSOR_RULES[@]}"}; do
     file="${entry%%|*}"                              # "name" -> the source clone; "name|url" -> that url
     if [ "$entry" != "$file" ]; then                 # third-party rule: the one shape still fetched
@@ -765,6 +817,9 @@ install_cursor_agents() {
     agents_dir="$HOME/.cursor/agents"
   fi
   mkdir -p "$agents_dir"
+  for file in ${RETIRED_AGENTS[@]+"${RETIRED_AGENTS[@]}"}; do
+    [ -f "$agents_dir/$file" ] && { rm -f "$agents_dir/$file"; log "  cursor agent pruned (retired upstream): $file"; }
+  done
   for file in ${CURSOR_AGENTS[@]+"${CURSOR_AGENTS[@]}"}; do
     src="$SOURCE_DIR/agents/$file"
     if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then

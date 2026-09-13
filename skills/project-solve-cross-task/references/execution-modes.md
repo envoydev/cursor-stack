@@ -2,6 +2,19 @@
 
 The full team is not the default. Classify size, risk, domains, and contract impact, then run the smallest safe mode. Modes are a routing policy, not separate agents - never create a web-angular-small-task-agent or an aspnet-implementer-high; keep one seat per role and let this policy pick the mode and `references/model-routing.md` pick the effort.
 
+## Contents
+
+- DELEGATED vs INLINE - dispatch capability
+- Feature / change modes
+- Decision ladder
+- Single-chat and implementer-only
+- Route by risk, not size - what the verifier is worth
+- Escalation guardrails
+- Per-mode model, by example
+- Team Lead routing output
+- Issue / bug modes
+- Cost rules
+
 ## DELEGATED vs INLINE - dispatch capability
 Before the size/risk modes below, every skill carrying the session-or-agents decision - the orchestrators (`project-solve-cross-task`, `project-build-from-scratch`, `project-architecture-quality-loop`, `project-test-coverage-loop`, `project-quality-loop`), the captures, and the single-chat twins (`project-solution-design` / `project-implementer` / `project-verify-plan`) - picks one dispatch mode at the start and holds it for the run. This is the canonical statement of that policy; the skills that must run without this file installed carry their own pinned copies or restatements:
 
@@ -12,7 +25,7 @@ Dispatch is explicit-only, house-wide: never dispatch a seat the user did not ch
 
 Detection is PER STACK, not per run: a per-stack install gives the session only the HOST repo's roster, so a cross-domain run started in one repo may find a sibling domain's seats undispatchable. That domain runs INLINE (design, build, self-verify in-session) while the domains with seats stay dispatched - name the split at the plan stop, keep the contract frozen either way, and the integration gate still reviews the assembled whole. When the user wants that domain's independent trio instead, offer the two real levers: run the flow from that repo, or install its trio here.
 
-**The approval gate file.** An implementer dispatch is mechanically gated (the `guard-unapproved-dispatch.js` hook): before the first implementer fans out, write `<docs-path>/flow/APPROVAL` with one first line - `APPROVED <plan/contract id> - "<the user's words, verbatim>"` on their explicit plan approval, or `AUTO - "<their words, verbatim>"` when they explicitly asked for a no-stops run. Stops are the default; AUTO is written only from the user's literal ask, never inferred from an ambiguous 'go' or from context. Re-write the stamp when the plan changes (a superseded contract_version does not carry approval forward), and delete the file when the run completes - a stale stamp must not authorize the next run. Designer and verifier dispatches need no stamp (the plan exists before approval; audits are read-only).
+**The approval gate file.** An implementer dispatch is mechanically gated (the `guard-unapproved-dispatch.js` hook): before the first implementer fans out, write `<docs-path>/flow/APPROVAL` with one first line - `APPROVED <plan/contract id> - "<the user's words, verbatim>"` on their explicit plan approval, or `AUTO - "<their words, verbatim>"` when they explicitly asked for a no-stops run. Stops are the default; AUTO is written only from the user's literal ask, never inferred from an ambiguous 'go' or from context. Re-write the stamp when the plan changes (a superseded contract_version does not carry approval forward), and delete the file when the run completes - a stale stamp must not authorize the next run. Write the stamp at the project root's `<docs-path>`, never relative to the shell's working directory - a relative write lands wherever that directory drifted, and the dispatch then bounces. The stamp belongs to the session that dispatches - written when its own decision lands, deleted at its own close; an earlier session's leftover stamp is not consent. If the stamp cannot be written, stop and put the choice to the user as one explicit question (retry the stamp, or run this stage inline) rather than retrying blind or dispatching around the gate - measured: five sessions in one project lost DELEGATED-mode fixes to an unwritable stamp and never said so. Designer and verifier dispatches need no stamp (the plan exists before approval; audits are read-only).
 
 ## Feature / change modes
 

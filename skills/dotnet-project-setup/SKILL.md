@@ -1,6 +1,6 @@
 ---
 name: dotnet-project-setup
-description: "Set up a new .NET solution's build spine - the canonical src / tests / .config layout, .slnx solution files, Directory.Build.props shared build properties, global.json SDK pinning + rollForward, central package management via Directory.Packages.props, and pinning a dotnet tool in .config/dotnet-tools.json. Load to set up a new .NET solution, add a NuGet package, add a project, or pin a dotnet tool; trigger files .slnx, Directory.Build.props, Directory.Packages.props, global.json, .config/dotnet-tools.json. Companions: `dotnet` (router / parent), `dotnet-code-quality`, `devops`; schema and version migrations are `dotnet-migrate`. Do NOT load for analyzers / TreatWarningsAsErrors / .editorconfig (`dotnet-code-quality`) or CI workflows / packaging / SourceLink (`devops`)."
+description: "Use to set up a new .NET solution, add a NuGet package, add a project, or pin a dotnet tool - and when a change touches .slnx, Directory.Build.props, Directory.Packages.props, global.json or .config/dotnet-tools.json. Owns the solution build spine: the canonical src / tests / .config layout, .slnx solution files, Directory.Build.props shared build properties, global.json SDK pinning + rollForward, central package management via Directory.Packages.props, and pinning a dotnet tool in .config/dotnet-tools.json. Do NOT use for analyzers / TreatWarningsAsErrors / .editorconfig (the .NET quality-gate skill) or CI workflows / packaging / SourceLink (the CI-and-deploy skill)."
 ---
 
 # dotnet-project-setup (build spine)
@@ -11,9 +11,8 @@ The files that configure every project in a solution at once - the layout, `.sln
 - Local tool pinning (`.config/dotnet-tools.json`) -> `references/local-tools.md`.
 - .NET Framework 4.8 project config (`packages.config` -> `PackageReference`, `<LangVersion>` pin, Server GC) -> `references/net-framework-48.md`.
 - Analyzers, `TreatWarningsAsErrors`, `.editorconfig`, the CI quality gate -> `dotnet-code-quality`. Do not put these in `Directory.Build.props` here.
-- CI workflows, container / `dotnet pack` packaging, SourceLink -> `devops`.
+- CI workflows, container / `dotnet pack` packaging, SourceLink -> the CI-and-deploy skill.
 - The dotnet-ef tool's migration workflow (add / apply migrations) -> `dotnet-migrate`.
-- Every other .NET work area -> the `dotnet` router (parent).
 
 ## Canonical layout
 
@@ -38,17 +37,23 @@ MySolution/
 - A setting that must hold for every project -> `Directory.Build.props`, never copy-pasted per csproj.
 - A package version -> `Directory.Packages.props`, never inline in a csproj (see the reference).
 - A pinned CLI tool -> `.config/dotnet-tools.json` (see the reference).
-- Anything CI or pipeline (`.github/workflows`) -> `devops`, not here.
+- Anything CI or pipeline (`.github/workflows`) -> the CI-and-deploy skill, not here.
 
 ## Solution file - .slnx
 
-`.slnx` is the XML solution format: the default from `dotnet new sln` on .NET 10, and opt-in on SDK 9.0.200+ with `--format slnx`. Prefer it - it diffs and merges without the GUID churn of a `.sln`, and any editor can read it. Keep exactly one solution file: after `dotnet sln migrate`, delete the old `.sln` so solution auto-detection stays unambiguous.
+`.slnx` is the XML solution format: the default from `dotnet new sln` on .NET 10, and opt-in on SDK 9.0.200+ with `--format slnx`. Prefer it - it diffs and merges without the GUID churn of a `.sln`, and any editor can read it. Keep exactly one solution file, so solution auto-detection stays unambiguous - but the old `.sln` is deleted by the user, never silently by the run.
 
 ```bash
 dotnet new sln --format slnx --name MySolution   # .NET 10 defaults to .slnx
 dotnet sln add src/MyApp/MyApp.csproj
-dotnet sln migrate                               # convert an existing .sln, then delete it
+dotnet sln migrate                               # writes MySolution.slnx, LEAVES MySolution.sln in place
 ```
+
+After `dotnet sln migrate`, check then ask - never delete first:
+
+1. Confirm the new file exists and lists every project the old one did (`dotnet sln MySolution.slnx list` against `dotnet sln MySolution.sln list` - the two lists must match exactly).
+2. Confirm the build still resolves against it: `dotnet build MySolution.slnx`.
+3. Only with both green, put the removal to the user as ONE explicit question: delete the old `.sln` now (recommended - two solution files make auto-detection ambiguous), keep both for one commit and delete it after CI is green, or keep the `.sln`. Never delete on your own judgement, and never before steps 1 and 2 have passed.
 
 ```xml
 <Solution>
@@ -69,7 +74,7 @@ dotnet sln migrate                               # convert an existing .sln, the
 
 ## Directory.Build.props - configure every project once
 
-Placed at the solution root, MSBuild auto-imports it into every project below. Keep it to the language baseline, reusable target-framework properties, and genuinely project-wide global usings. The boundary: analyzer and warnings-as-errors props go to `dotnet-code-quality`; package metadata, packaging, and SourceLink go to `devops` - not here.
+Placed at the solution root, MSBuild auto-imports it into every project below. Keep it to the language baseline, reusable target-framework properties, and genuinely project-wide global usings. The boundary: analyzer and warnings-as-errors props go to `dotnet-code-quality`; package metadata, packaging, and SourceLink go to the CI-and-deploy skill - not here.
 
 ```xml
 <Project>
@@ -127,4 +132,4 @@ Pin the SDK so every machine and CI runner builds with the same toolchain. Proje
 | `latestMinor` | highest minor within the same major |
 | `latestMajor` | highest SDK installed on the machine |
 
-Recommend `latestFeature` - pins the toolchain for reproducible builds, yet won't fail on a box that only has a slightly newer patch. In CI, point setup-dotnet at the file with `global-json-file: global.json` (see `devops`).
+Recommend `latestFeature` - pins the toolchain for reproducible builds, yet won't fail on a box that only has a slightly newer patch. In CI, point setup-dotnet at the file with `global-json-file: global.json` (the CI-and-deploy skill owns the workflow).

@@ -1,6 +1,16 @@
 # Aspire integration testing
 
-Container-backed, end-to-end tests that boot the real Aspire AppHost in-process and drive it over HTTP. Load from `dotnet-testing` when a test needs the whole orchestrated graph - API, database, cache - not a substituted collaborator. The AppHost wiring itself (`AddProject`/`AddPostgres`/`WithReference`/`WaitFor`, ServiceDefaults) belongs to `dotnet-aspire`; this is only the test harness on top of it.
+Container-backed, end-to-end tests that boot the real Aspire AppHost in-process and drive it over HTTP. Load it from SKILL.md when a test needs the whole orchestrated graph - API, database, cache - not a substituted collaborator. The AppHost wiring itself (`AddProject`/`AddPostgres`/`WithReference`/`WaitFor`, ServiceDefaults) belongs to the skill covering Aspire orchestration; this is only the test harness on top of it.
+
+## Contents
+
+- Packages
+- Disable config file-watching before any test runs
+- The fixture: IAsyncLifetime + DistributedApplicationTestingBuilder
+- Discover endpoints dynamically, never hard-code them
+- One AppHost, two modes
+- Reset the database between tests with Respawn
+- Tips
 
 ## Packages
 
@@ -9,6 +19,8 @@ Container-backed, end-to-end tests that boot the real Aspire AppHost in-process 
 <PackageReference Include="xunit" Version="*" />
 <PackageReference Include="xunit.runner.visualstudio" Version="*" />
 <PackageReference Include="Microsoft.NET.Test.Sdk" Version="*" />
+<PackageReference Include="Npgsql" Version="*" />      <!-- the Respawn reset below opens a real connection -->
+<PackageReference Include="Respawn" Version="*" />
 ```
 
 ## Disable config file-watching before any test runs
@@ -132,17 +144,29 @@ The fixture flips these through the args array passed to `CreateAsync` (`"App:Us
 Volumes-off gives a clean start per run, but a shared fixture leaks state between tests within that run. Respawn deletes all data while keeping the schema, so each test starts from a known-empty database without a full rebuild:
 
 ```csharp
+using Npgsql;
 using Respawn;
+using Respawn.Graph;
 
 // in InitializeAsync, after the app reports healthy:
 _connectionString = await _app.GetConnectionStringAsync("appdb");
-_respawner = await Respawner.CreateAsync(_connectionString, new RespawnerOptions
+await using (var connection = new NpgsqlConnection(_connectionString))
 {
-    DbAdapter = DbAdapter.Postgres,
-    TablesToIgnore = new Table[] { "__EFMigrationsHistory" }
-});
+    await connection.OpenAsync();
+    // Postgres needs an OPEN DbConnection here - the connection-string overload is SQL Server only
+    _respawner = await Respawner.CreateAsync(connection, new RespawnerOptions
+    {
+        DbAdapter = DbAdapter.Postgres,
+        TablesToIgnore = new Table[] { "__EFMigrationsHistory" }
+    });
+}
 
-public Task ResetAsync() => _respawner!.ResetAsync(_connectionString!);
+public async Task ResetAsync()
+{
+    await using var connection = new NpgsqlConnection(_connectionString!);
+    await connection.OpenAsync();
+    await _respawner!.ResetAsync(connection);
+}
 ```
 
 Call `ResetAsync()` from the test class constructor for per-test fresh state, or from a class-level `IAsyncLifetime`.

@@ -39,14 +39,14 @@ Independently deployable, independently scalable services split by bounded conte
 ## Edges and delivery
 
 - **Gateway / BFF**: front the mesh with a gateway and a backend-for-frontend per client type (web, mobile). YARP is the first-class Microsoft-supported choice - a library you embed for full pipeline control and throughput; Ocelot is the config-first option for simpler needs; reach for Kong or KrakenD only on a large multi-language platform.
-- **Versioning**: version every contract from day one with additive, consumer-safe changes - `dotnet-web-backend` (installed with the ASP.NET stack) owns the discipline in its `references/api-versioning.md`.
+- **Versioning**: version every contract from day one with additive, consumer-safe changes - `dotnet-web-backend` owns the discipline in its `references/api-versioning.md`.
 - **Resilience**: timeouts, retries with backoff, circuit breakers, idempotent handlers - `dotnet-web-backend` owns the standard resilience handler.
 - **Observability**: distributed tracing correlated across every hop is not optional - OpenTelemetry over OTLP, wired in `dotnet-web-backend` with manual spans in its `references/observability.md`. Bound metric cardinality and use tail-based sampling.
 - **Containers and runtime**: multi-stage builds on chiseled / distroless images, one database per service, Kubernetes for production - `devops` owns the Dockerfiles, CI, and deploy. Standardize new services on the current .NET LTS (an even-numbered release); an STS runtime is the wrong floor for a platform you run for years.
 
 ## Local orchestration - dev-time only
 
-Run the whole mesh locally with .NET Aspire: the AppHost models services, databases, and messaging and wires service discovery, OpenTelemetry, and resilience by default (`dotnet-aspire`). The AppHost is a **dev-time orchestrator, not a production runtime** - production stays on your Kubernetes / Helm / GitOps pipeline. Its publish/deploy is GA for Azure Container Apps; the native Kubernetes publisher is still maturing, so keep K8s deploys on your own pipeline for now.
+Run the whole mesh locally with .NET Aspire: the AppHost models services, databases, and messaging and wires service discovery, OpenTelemetry, and resilience by default (`dotnet-aspire`). The AppHost is a **dev-time orchestrator, not a production runtime** - production stays on your Kubernetes / Helm / GitOps pipeline. Its publish/deploy targets (Azure Container Apps, Kubernetes) change status release by release - verify the current state via context7 before leaning on one; the house default stays your own pipeline.
 
 ## Verify independent deployability
 

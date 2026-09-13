@@ -11,7 +11,7 @@ Loaded from the `browser-extension` skill when scaffolding, choosing tooling, or
 | Plasmo | stalled: CLI and sub-packages ~a year without releases, still self-described alpha, Parcel-based with dependency-vuln reports | never for new projects |
 | raw Vite/esbuild | hand-rolled manifest, HMR, per-browser builds | very simple extensions or unusual constraints |
 
-Scaffold: `npm create wxt` with TypeScript. Types: `@types/chrome` or `chrome-types` (generated from Chromium source, more current) + the polyfill's or WXT's bundled types. Typed messaging helpers: `@webext-core/messaging` or WXT's own.
+Scaffold: `npx wxt@latest init` with TypeScript. Types: `@types/chrome` or `chrome-types` (generated from Chromium source, more current) + the polyfill's or WXT's bundled types. Typed messaging helpers: `@webext-core/messaging` or WXT's own.
 
 ## UI frameworks vs the CSP eval wall
 
@@ -38,4 +38,4 @@ Extension pages run under a CSP that forbids `unsafe-eval` - anything compiling 
 
 ## CI publishing
 
-Build → test → publish on semver tags. Chrome Web Store via its API (community actions: chrome-extension-upload, chrome-webstore-upload-cli) with an OAuth client-id/secret/refresh-token on the `chromewebstore` scope; AMO via `web-ext sign` or the AMO API. Gotcha: a release created by `GITHUB_TOKEN` does not trigger downstream workflows - keep publishing in the same workflow as the release step.
+Build → test → publish on semver tags. Let the toolkit drive the stores: `wxt submit init` captures the store credentials once (`.env.submit` locally, the same variables as CI secrets) and `wxt submit` pushes the Chrome, Firefox (with the sources zip) and Edge zips in one step. Chrome Web Store auth is a service account on the v2 API - the OAuth client-id/secret/refresh-token flow (v1, what the older community upload actions use) is retired from Oct 2026, so fetch the current auth setup via context7 rather than copying an old recipe; AMO via `web-ext sign` or the AMO API when not on `wxt submit`. Gotcha: a release created by `GITHUB_TOKEN` does not trigger downstream workflows - keep publishing in the same workflow as the release step.

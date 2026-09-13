@@ -1,11 +1,11 @@
 ---
 name: dotnet-console-apps
-description: "Conventions for the console app's interface surface - what a .NET console binary IS to the outside world, on top of the generic host that runs it. Two shapes: a one-shot CLI tool (System.CommandLine 2.0 / Spectre.Console.Cli / Cocona, subcommands, exit codes) and a long-running gateway bot or consumer (Telegram.Bot, Discord.Net, SlackNet, CryptoExchange.Net, broker queue-workers) run inside a BackgroundService. Floors at .NET 8 / C# 12. Load when building a CLI tool, a chat or trading bot, or a bot's command surface, or when the user names System.CommandLine, Spectre.Console, Telegram.Bot, Discord.Net, or a bot. Companions: dotnet-hosted-services (host lifecycle + 24/7 hardening), dotnet-messaging, csharp, dotnet-testing. Do NOT load for the host lifecycle itself (dotnet-hosted-services), a web API or webhook endpoint (dotnet-web-backend), or a desktop GUI (dotnet-wpf)."
+description: "Use when building a .NET CLI tool, a chat or trading bot, or a bot's command surface - or when the user names System.CommandLine, Spectre.Console, Telegram.Bot, Discord.Net, or a bot. Conventions for the console app's interface surface: what a .NET console binary IS to the outside world, on top of the generic host that runs it. Two shapes: a one-shot CLI tool (System.CommandLine 2.0 / Spectre.Console.Cli / Cocona, subcommands, exit codes) and a long-running gateway bot or consumer (Telegram.Bot, Discord.Net, SlackNet, CryptoExchange.Net, broker queue-workers) run inside a BackgroundService. Floors at .NET 8 / C# 12. Do NOT use for the host lifecycle itself - that is the hosted-worker skill covering the generic host and `BackgroundService` - nor for a web API or webhook endpoint, or a desktop GUI."
 ---
 
 # .NET console apps - the CLI and bot interface surface
 
-A console binary is one of two things by its external interface: a **one-shot CLI tool** (parse arguments, do the work, return an exit code) or a **long-running gateway app** (a bot or consumer that stays connected and reacts to events). The generic host that runs the long-running kind - lifecycle, `BackgroundService`, graceful shutdown, and the 24/7 hardening: resilience, rate limiting, reconnect, deployment - is `dotnet-hosted-services`. This skill owns the interface layer on top: how a CLI parses its command surface, and how each bot platform's SDK plugs into that host. Floor is .NET 8 / C# 12.
+A console binary is one of two things by its external interface: a **one-shot CLI tool** (parse arguments, do the work, return an exit code) or a **long-running gateway app** (a bot or consumer that stays connected and reacts to events). The generic host that runs the long-running kind - lifecycle, `BackgroundService`, graceful shutdown, and the 24/7 hardening: resilience, rate limiting, reconnect, deployment - is the hosted-worker skill's (the one covering the generic host's `BackgroundService` lifecycle and a 24/7 worker's outbound-I/O hardening: `HttpClient` pooling, resilience pipelines, rate limiting, `ClientWebSocket` reconnect, deployment). This skill assumes that skill is loaded alongside and, where the install lacks it, holds a bot to the floors under 'Bots and gateway consumers'. This skill owns the interface layer on top: how a CLI parses its command surface, and how each bot platform's SDK plugs into that host. Floor is .NET 8 / C# 12.
 
 ## CLI argument parsing
 
@@ -32,11 +32,11 @@ root.SetAction((parseResult, ct) =>
 return await root.Parse(args).InvokeAsync();
 ```
 
-Signal handling and graceful shutdown for a tool that does real work are `dotnet-hosted-services`.
+Signal handling and graceful shutdown for a tool that does real work are the hosted-worker skill's; without it, the floor is `Host.CreateApplicationBuilder` + `RunAsync` so Ctrl-C and SIGTERM cancel the handler's token.
 
 ## Bots and gateway consumers
 
-A bot is a long-running gateway client, so it *is* a hosted service: run the platform client inside a `BackgroundService`, keep command handlers in DI, and lean on `dotnet-hosted-services` for the lifecycle plus the reconnect / rate-limit / idempotency hardening in its `references/resilience-and-io.md`. The per-platform library choice and integration shape live in `references/bot-sdks.md`:
+A bot is a long-running gateway client, so it *is* a hosted service: run the platform client inside a `BackgroundService`, keep command handlers in DI, and lean on the hosted-worker skill for the lifecycle plus the reconnect / rate-limit / idempotency hardening its I/O reference carries. Where the install lacks that skill, these floors still hold: the client runs in a `BackgroundService` whose `ExecuteAsync` catches and logs per cycle (an escaped exception stops the host); every call threads the stopping token; one `HttpClient` over a `SocketsHttpHandler` with `PooledConnectionLifetime`, never `new HttpClient()` per call; reconnect with exponential backoff plus jitter and re-subscribe every channel on a fresh socket; honor `429` / `Retry-After`; persist an idempotency key before each send and reuse it on the retry. The per-platform library choice and integration shape live in `references/bot-sdks.md`:
 
 | Building... | Library | Also load |
 |---|---|---|
@@ -44,10 +44,20 @@ A bot is a long-running gateway client, so it *is* a hosted service: run the pla
 | a Discord bot | `Discord.Net` or `DSharpPlus` (gateway) | `references/bot-sdks.md` |
 | a Slack bot | `SlackNet` (Socket Mode or Events API) | `references/bot-sdks.md` |
 | a trading / exchange bot | `CryptoExchange.Net` + a venue client | `references/bot-sdks.md` |
-| a broker queue worker | per-broker client | `dotnet-messaging` (the delivery contract) + `references/bot-sdks.md` |
+| a broker queue worker | per-broker client | the broker-messaging skill (the delivery contract - outbox, idempotent consumers), where installed + `references/bot-sdks.md` |
 
-The one rule that spans all of them: **decouple the receive loop from the work.** The websocket/poll loop writes to a bounded `System.Threading.Channels` channel; a consumer drains it at a controlled concurrency. That keeps a slow handler from stalling the gateway and gives you backpressure - see `dotnet-hosted-services` for the channel-drained-by-a-hosted-service pattern.
+The one rule that spans all of them: **decouple the receive loop from the work.** The websocket/poll loop writes to a bounded `System.Threading.Channels` channel; a consumer drains it at a controlled concurrency. That keeps a slow handler from stalling the gateway and gives you backpressure - the channel-drained-by-a-hosted-service pattern is the hosted-worker skill's; the floor here is a bounded channel (`FullMode = Wait`) drained by one `BackgroundService` loop.
+
+## Prove it runs before calling it done
+
+A console binary's contract is its exit code and its argument surface, and neither is proven by a build:
+
+1. `dotnet build -warnaserror` - exit 0.
+2. `dotnet run -- --help` - the command tree renders, every subcommand and option you added is listed.
+3. `dotnet run -- <the real invocation>` then `echo $?` (`$LASTEXITCODE` on PowerShell) - 0 on success, non-zero on the failure path you defined. A tool that returns 0 on failure is broken in CI and nowhere else.
+
+Quote the command and its output line for each; a success claim with no exit code behind it is not evidence.
 
 ## Testing and time
 
-A bot's timed logic (poll intervals, backoff windows, rate limits) is tested by injecting `TimeProvider` and advancing a `FakeTimeProvider` - never real waits. Integration tests run the host against a fake gateway (a fake client, an in-memory channel), never the live Telegram / Discord / exchange endpoint. The full approach is `dotnet-testing`.
+A bot's timed logic (poll intervals, backoff windows, rate limits) is tested by injecting `TimeProvider` and advancing a `FakeTimeProvider` - never real waits. Integration tests run the host against a fake gateway (a fake client, an in-memory channel), never the live Telegram / Discord / exchange endpoint. The full approach belongs to the .NET testing hub.

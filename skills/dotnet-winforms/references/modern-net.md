@@ -6,6 +6,21 @@ The version-agnostic conventions live in the parent SKILL.md; this reference is 
 mechanics plus the WinForms-specific migration deltas. The frozen 4.8 counterpart is
 **net-framework-48.md**.
 
+## Contents
+
+- Project shape
+- Dependency injection through the generic host
+- Secrets
+- The MVVM binding engine (stable in .NET 8)
+- Async: InvokeAsync and async forms
+- High-DPI as a build property
+- Dark mode (experimental .NET 9, stable .NET 10)
+- BinaryFormatter is gone - move payloads to JSON
+- Version timeline (what lands where)
+- WinForms-specific migration deltas
+- Deployment and packaging
+- Analyzers to keep on
+
 ## Project shape
 
 - SDK-style `.csproj`: `<TargetFramework>net10.0-windows</TargetFramework>` and
@@ -56,7 +71,7 @@ children), `ButtonBase.Command` / `CommandParameter` over `System.Windows.Input.
 - Know the ceiling: no XAML, classic value binding still flows through `Binding` / `BindingSource`,
   and there are no data templates, no rich converters, and no `DependencyProperty`. **XAML is not
   coming to WinForms** - a ViewModel shared with WPF/MAUI is the payoff, not visual parity. When you
-  want real MVVM fidelity, that is a `dotnet-wpf` decision, not a WinForms one.
+  want real MVVM fidelity, that is a WPF decision (the WPF conventions skill), not a WinForms one.
 
 ## Async: InvokeAsync and async forms
 
@@ -145,7 +160,7 @@ rollback - is the `dotnet-migrate` skill's. These are the deltas particular to W
   `PublishTrimmed` can strip runtime-needed types; it is also only valid for self-contained apps
   (trimming a framework-dependent build errors with `NETSDK1102`). Prefer `PublishReadyToRun` for
   startup and avoid trimming unless you test exhaustively. General CI / release orchestration is the
-  `devops` skill's.
+  CI-and-deploy skill's.
 
 ## Analyzers to keep on
 

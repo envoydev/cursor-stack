@@ -1,6 +1,6 @@
 ---
 name: dotnet-authentication
-description: "ASP.NET Core auth conventions covering both halves - authentication (who the caller is) and authorization (what they may do). Pick the scheme by surface: JWT bearer for stateless APIs, cookies for server-rendered apps, OpenID Connect for delegated SSO. Validate every token field, lean on ASP.NET Identity as the user store, and gate access with named policies and authorization handlers rather than scattered role strings. Floors at .NET 8 / C# 12. Load before standing up a sign-in flow, wiring JWT or OIDC, writing an authorization policy, or protecting an endpoint. Companions: csharp, dotnet-minimal-api, dotnet-web-backend, dotnet-cryptography, dotnet-security. Do NOT load for the OWASP hardening sweep or secret placement (dotnet-security) or crypto primitives (dotnet-cryptography)."
+description: "Load before standing up a sign-in flow, wiring JWT or OIDC, writing an authorization policy, or protecting an endpoint. ASP.NET Core auth conventions covering both halves - authentication (who the caller is) and authorization (what they may do). Pick the scheme by surface: JWT bearer for stateless APIs, cookies for server-rendered apps, OpenID Connect for delegated SSO. Validate every token field, lean on ASP.NET Identity as the user store, and gate access with named policies and authorization handlers rather than scattered role strings. Floors at .NET 8 / C# 12. Do NOT load for the OWASP hardening sweep, secret placement, or crypto primitives - the .NET application-security and cryptography skills own those."
 ---
 
 # ASP.NET Core authentication and authorization
@@ -55,14 +55,19 @@ var claims = new[]
     new Claim(ClaimTypes.Role, user.Role),
 };
 var now = timeProvider.GetUtcNow();   // injected TimeProvider, never DateTime.Now - see csharp
-var token = new JwtSecurityToken(
-    issuer: config["Jwt:Issuer"],
-    audience: config["Jwt:Audience"],
-    claims: claims,
-    notBefore: now.UtcDateTime,
-    expires: now.AddMinutes(15).UtcDateTime,
-    signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+var handler = new JsonWebTokenHandler();   // Microsoft.IdentityModel.JsonWebTokens - the handler .NET 8+ JwtBearer validates with
+string jwt = handler.CreateToken(new SecurityTokenDescriptor
+{
+    Issuer = config["Jwt:Issuer"],
+    Audience = config["Jwt:Audience"],
+    Subject = new ClaimsIdentity(claims),
+    NotBefore = now.UtcDateTime,
+    Expires = now.AddMinutes(15).UtcDateTime,
+    SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256),
+});
 ```
+
+Mint on the same handler family you validate with: since .NET 8 `AddJwtBearer` validates through `JsonWebTokenHandler` by default and its events surface a `JsonWebToken`, so an `OnTokenValidated` that casts `context.SecurityToken` to `JwtSecurityToken` breaks; the legacy `JwtSecurityTokenHandler` path is reachable only by setting `UseSecurityTokenValidators = true`, which forfeits the faster default.
 
 Symmetric `HmacSha256` is fine when one service issues and validates. The moment a second party must verify a token it did not mint, switch to asymmetric signing (RSA / ECDSA) so the verifier holds only the public key. Keep access tokens short-lived and pair them with a refresh token if sessions must outlive fifteen minutes - a long-lived access token is a long-lived liability with no way to revoke it. The signing key is a secret: it comes from configuration, never source.
 
@@ -113,7 +118,7 @@ Attach the policy where the routes are grouped:
 var admin = app.MapGroup("/admin").RequireAuthorization("CanPublish");
 ```
 
-`RequireAuthorization` on a minimal API group is the chokepoint - see `dotnet-minimal-api` for how groups carry filters and metadata. Read the authenticated caller from the injected `ClaimsPrincipal`, never from a header you trust by hand:
+`RequireAuthorization` on a minimal API group is the chokepoint - the minimal-API endpoint skill covers how groups carry filters and metadata. Read the authenticated caller from the injected `ClaimsPrincipal`, never from a header you trust by hand:
 
 ```csharp
 app.MapGet("/me", (ClaimsPrincipal user) =>
@@ -155,13 +160,17 @@ API keys are the weakest credential - a single static string with no identity, e
 - Store a **hash** of the key, not the key itself; a leaked database must not leak working credentials.
 - Compare in **constant time** so the check leaks no timing information about how many characters matched.
 
-The hashing and constant-time-compare primitives belong to `dotnet-cryptography` - call them, do not reimplement them. Implement the check as an authentication handler or a small middleware that sets a `ClaimsPrincipal` on success, so the rest of the pipeline treats an API-key caller exactly like any other authenticated principal.
+Hash with `SHA256.HashData` (an API key is high-entropy, so a fast hash is enough) and compare with `CryptographicOperations.FixedTimeEquals` - the .NET cryptography skill owns their correct use; reimplement neither. Implement the check as an authentication handler or a small middleware that sets a `ClaimsPrincipal` on success, so the rest of the pipeline treats an API-key caller exactly like any other authenticated principal.
 
 ## Where secrets live
 
-The signing key, client secret, and connection strings are secrets and must never touch a tracked file. The dev-vs-prod placement rule is owned by `dotnet-security`; reach for it rather than restating it here.
+The signing key, client secret, and connection strings are secrets and must never touch a tracked file. Where they live in dev versus prod is the .NET application-security hardening skill's - reach for it where the install has one; without it, the rule here is the whole guidance: the signing key and client secret come from configuration or a secret store, never a tracked file.
 
-The broader access-control and SSRF threat model - what an attacker does once past the front door - is also owned by `dotnet-security`.
+The broader access-control and SSRF threat model - what an attacker does once past the front door - belongs to the skill covering OWASP-mapped .NET hardening.
+
+## Prove the wiring
+
+Auth that compiles is not auth that holds. Before any done word, run the three checks and quote the result of each: a protected endpoint returns 401 with no token and 403 with a token that fails the policy; a valid token returns 200 and the handler reads the expected claim; and an integration test pins all three so the next change cannot silently open the endpoint. A validation flag turned off to make one of them pass is the failure this section exists to catch.
 
 ## Anti-patterns
 

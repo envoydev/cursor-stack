@@ -1,6 +1,6 @@
 # Token-Reduction Policy - Ponytail and report terseness
 
-Token reduction is a policy, not ad-hoc instructions repeated in every agent. Two disciplines do different jobs: Ponytail cuts unnecessary work and code (the big lever); report terseness cuts output verbosity (a smaller, selective lever). Ponytail ships as a plugin AND as the inline discipline named in each body; report terseness is inline-only - it was the Caveman plugin until measurement showed that plugin's SessionStart hook never fired inside a dispatched seat (so it saved nothing in a multi-subagent flow while adding its descriptions to every context), so the plugin was dropped and only the inline discipline - baked into the report / punch-list seats - remains.
+Token reduction is a policy, not ad-hoc instructions repeated in every agent. Two disciplines do different jobs: Ponytail cuts unnecessary work and code (the big lever); report terseness cuts output verbosity (a smaller, selective lever). Both are inline disciplines, and for the same reason: a plugin form of each was measured and dropped - a session-start injection never fires inside a dispatched seat, so it saved nothing in a multi-subagent flow while adding its descriptions to every context, and it duplicated a ladder the seat bodies already carry in full. The NAME Ponytail stays as the house term for the discipline, and the seat bodies carry it.
 
 ## Ponytail - the primary lever
 

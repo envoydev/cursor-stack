@@ -1,6 +1,6 @@
 ---
 name: ionic
-description: "Ionic / Capacitor mobile + hybrid app conventions - house rules for Ionic Angular UI (standalone + signals, IonRouterOutlet, page-caching view lifecycle, CSS-variable theming), Capacitor lifecycle + platform guards, runtime permissions, and Capacitor plugin sourcing (official -> Capawesome -> capacitor-community) + typed-service wrapping. Targets Ionic 8 / Angular 17+ / Capacitor 6+ (8 current). Load before building or editing an Ionic/Capacitor app - anywhere ionic.config.json or capacitor.config.* lives. Companions: angular-conventions, typescript. Do NOT load for plain web Angular with no native shell."
+description: "Ionic / Capacitor mobile + hybrid app conventions. Load before building or editing an Ionic/Capacitor app - anywhere ionic.config.json or capacitor.config.* lives. Covers Ionic Angular UI (standalone + signals, IonRouterOutlet, page-caching view lifecycle, CSS-variable theming), the Capacitor lifecycle and platform guards, the Angular zone boundary around plugin listeners, runtime permissions, and plugin sourcing (official -> Capawesome -> capacitor-community) + typed-service wrapping. Targets the current Ionic and Capacitor majors - resolve the installed major before the first import rather than assuming one. The Angular framework conventions and the TypeScript baseline apply underneath. Do NOT load for plain web Angular with no native shell."
 ---
 
 # Ionic / Capacitor Conventions
@@ -14,19 +14,19 @@ An Ionic app is an Angular app in a native (Capacitor) shell: the framework rule
 - Dark mode is a palette you opt into, not per-component overrides: import Ionic's dark palette and choose the strategy - follow the OS (system) or an app toggle (the ion-palette-dark class on the root). Theme off the palette's CSS variables; never hand-roll dark colours per component. The v8 import files and the step-token split are in `references/versions.md`.
 - Respect the OS accessibility settings: Ionic scales type to the device Dynamic Type / font-size setting by default (the `--ion-dynamic-font` token) - size with relative units and check large-text layouts, never fixed `px` that clips. Keep touch targets >= 44px and give every interactive control an accessible name.
 - Keep page components thin: data + state in services/stores, presentation in the page.
-- Import Ionic UI components from `@ionic/angular/standalone` and bootstrap with `provideIonicAngular()`, never the `@ionic/angular` barrel - the barrel path pulls in lazy-loaded code that defeats tree-shaking.
+- Import Ionic UI components and `provideIonicAngular()` from the standalone entry point the installed Ionic major documents - resolve it via context7 against the workspace's own `@ionic/angular` major before the first import, never from recall. The entry point moved between majors and the wrong one silently defeats tree-shaking; the per-major paths are in `references/versions.md`.
 
 ## Form controls - the modern syntax
 - Label and validation live on the control, not slotted into `IonItem`: `IonInput` / `IonTextarea` / `IonSelect` carry `label`, `labelPlacement`, `fill` (`outline` / `solid`), `helperText`, `errorText`, and `counter` directly. Ionic 8 removed the legacy `IonItem`-wrapped form pattern and the `legacy` property - never author it or paste it from an old sample.
-- The control's `label` (or an `[aria-label]` when it is visually labelled elsewhere) IS its accessible name - a field with neither fails the a11y gate. Build forms with typed reactive `FormGroup`s and surface validation through one shared `errorText` path, not a per-field `@if` error wall. That holds even where `angular-conventions` prefers Signal Forms (v21+): Ionic's controls are documented and tested against the reactive-forms path, so Signal Forms waits on Ionic surfaces until Ionic documents support - the same treat-as-unsupported stance as zoneless below.
+- The control's `label` (or an `[aria-label]` when it is visually labelled elsewhere) IS its accessible name - a field with neither fails the a11y gate. Build forms with typed reactive `FormGroup`s and surface validation through one shared `errorText` path, not a per-field `@if` error wall. That holds even where `angular-conventions` prefers Signal Forms (v21+): Ionic's controls are documented and tested against the reactive-forms path, so Signal Forms waits on Ionic surfaces until Ionic documents support for the installed major - check the Ionic docs via context7 before assuming, never recall.
 
 ## Overlays - modal, popover, toast, alert, action-sheet, loading
 - Prefer the inline component with `[isOpen]` bound to a signal and `(didDismiss)` handled over the imperative `*Controller` - overlay state stays in the component and tears down cleanly. Reach for the controller only for a genuinely fire-and-forget prompt.
 - Always read the dismissal: handle the backdrop tap, the hardware back, and the returned `role` on `didDismiss` - an overlay whose result you never read is a dropped user decision. Per-overlay component options are fetched live.
 
 ## Change detection and zoneless
-- OnPush everywhere except the shell: never put OnPush on a component that hosts `IonRouterOutlet` or `IonNav`. It stops lifecycle hooks such as `ngOnInit` from firing and breaks async rendering (Ionic's own docs). Keep those shell components on the default strategy; apply OnPush only to leaf pages and presentational components.
-- Do not go zoneless. Ionic keeps Zone.js as a peer dependency and is not officially zoneless-compatible, so stripping it out risks Ionic's own web components and buys no bundle saving while Zone.js stays required. Signals are fine in your Angular layer and leaf components - they just don't make Ionic's components zoneless. Treat zoneless as unsupported until Ionic ships official support.
+- OnPush everywhere except the shell: never put OnPush on a component that hosts `IonRouterOutlet` or `IonNav`. It stops lifecycle hooks such as `ngOnInit` from firing and breaks async rendering (Ionic's own docs). Keep those shell components eagerly checked - `ChangeDetectionStrategy.Default`, renamed `Eager` in Angular 22, where OnPush became the framework default so the shell now opts out explicitly; apply OnPush only to leaf pages and presentational components.
+- Zoneless is gated by the Ionic major, not the Angular one - check the installed major before deciding, and keep state flowing through signals either way, which is what makes the answer stop mattering to your own code. The per-major rule (Ionic 8 keeps Zone.js as a peer dependency and is not zoneless-compatible whatever Angular runs underneath; Ionic 9 ships official support) is in `references/versions.md`.
 
 ## Navigation
 - Route with the Angular router inside an `IonRouterOutlet`; lazy-load every feature route via `loadComponent` / `loadChildren`. Tabs use `IonTabs` with their own outlet.
@@ -53,7 +53,7 @@ Three different questions, three different calls - don't conflate them:
 - Own pause/resume, hardware back, and deep links (`appUrlOpen`) in that one service, not scattered across pages. On resume, re-read any state that may have gone stale in the background (auth token, geolocation) rather than trusting the pre-pause snapshot.
 
 ## The Angular zone boundary - wrap every listener callback
-Capacitor plugin listener callbacks fire outside Angular's `NgZone`, so any state they mutate escapes change detection and the UI silently goes stale - the single most common Angular+Capacitor bug. Wrap the body of every listener callback that touches template-bound state - `appStateChange`, `backButton`, `appUrlOpen`, `networkStatusChange`, the push events - in `NgZone.run()`; inject `NgZone` rather than reaching for `setTimeout` or `ApplicationRef.tick()`. Registration and teardown follow the lifecycle rule above: register in the app-level service, capture the handle, remove on destroy.
+Capacitor plugin listener callbacks fire outside Angular's `NgZone`, so any state they mutate escapes change detection and the UI silently goes stale - the single most common Angular+Capacitor bug. Wrap the body of every listener callback that touches template-bound state - `appStateChange`, `backButton`, `appUrlOpen`, `networkStatusChange`, the push events - in `NgZone.run()`; inject `NgZone` rather than reaching for `setTimeout` or `ApplicationRef.tick()`. Under zoneless (Ionic 9 on Angular 21+) the zone is a no-op and the signal write alone repaints - the wrap is harmless there, but the state must be a signal either way. Registration and teardown follow the lifecycle rule above: register in the app-level service, capture the handle, remove on destroy.
 
 Broken - the template never updates:
 ```typescript
@@ -79,34 +79,11 @@ App.addListener('backButton', ({ canGoBack }) =>
   this.zone.run(() => (canGoBack ? this.location.back() : App.exitApp())));
 ```
 
-## Native-vs-web fallbacks - degrade, never crash
-- Every native call needs a defined web path so the PWA and `ionic serve` dev build still run.
-- Three fallback shapes, in order of preference: (1) a real web implementation when the plugin ships web support (Capacitor's official plugins mostly do - Camera falls back to file input, Preferences to localStorage); (2) a degraded-but-functional stand-in (share via the Web Share API, or copy-link when even that is absent); (3) an explicit, typed 'unavailable' result the UI can render as a disabled affordance. Prefer the highest one the plugin and target support - a silent no-op is the one outcome to avoid, because it looks like a bug.
-- Feature-detect, don't assume: gate on `Capacitor.isPluginAvailable('Camera')` and the platform, not on a try/catch that swallows everything.
+## The native seam - one typed service owns it
+- Call a plugin only through a typed Angular service, never the plugin API scattered across components. That service is the single owner of the whole seam: the permission check, the web-fallback branch, the listener lifecycle, and error mapping - a denied permission or a missing capability is a `Result` the UI renders, not an unhandled throw.
+- Source in preference order: official `@capacitor/*`, then Capawesome (`@capawesome/capacitor-*`), then `@capacitor-community/*`, then a vetted community package - never an unmaintained one-off. Confirm the plugin's latest major matches your Capacitor major before adopting it.
+- `checkPermissions()` before `requestPermissions()`, request at the point of use behind an affordance that explains why, and handle every terminal state including the partial ones. The iOS prompt is one-shot, so a denial you triggered before the user understood the value is permanent.
+- Every native call needs a defined web path so the PWA and `ionic serve` still run - a real web implementation, a degraded stand-in, or an explicit typed 'unavailable' the UI renders as a disabled affordance. A silent no-op is the one outcome to avoid: it looks like a bug.
+- Unit-test the wrapping service with the plugin mocked, never the device - a jsdom test that 'exercises' the native path is exercising your mock.
 
-## Permissions - check, explain, request, handle the no
-Run the full cycle, in order, for any permission-gated API (camera, geolocation, notifications, contacts):
-- Check first with the plugin's `checkPermissions()`; only call `requestPermissions()` when the status is `'prompt'` / `'prompt-with-rationale'`. Never request blind on app start.
-- Request at the point of use, right after a UI affordance that explains why - the OS prompt is one-shot on iOS, so a denial you triggered before the user understood the value is effectively permanent.
-- Handle every terminal state explicitly: `'granted'`, `'denied'`, and the partial states that matter (iOS `'limited'` photo access, coarse-vs-fine location). A denial is a `Result` the UI renders (a disabled control plus a deep-link to system settings via the App plugin), never an unhandled throw.
-- Re-check on resume - the user may have changed the grant in system settings while backgrounded.
-
-## Capacitor plugins - sourcing
-Preference order when you need a plugin:
-1. **Official** `@capacitor/*` core plugins first (Camera, Geolocation, Preferences, Filesystem, ...).
-2. **Capawesome** `@capawesome/capacitor-*` (github.com/capawesome-team/capacitor-plugins) - well-maintained, tracks the current Capacitor major.
-3. **capacitor-community** `@capacitor-community/*` (the capacitor-community org) for community-maintained needs.
-4. Vetted community / CapGo only if nothing above fits - never an unmaintained one-off npm package.
-
-Before adopting any third-party plugin: confirm its latest major matches your Capacitor version, check recent releases / commits (maintenance), and verify iOS / Android / web platform support. Per-plugin install and config is fetched live - context7 or the plugin's own README, since it drifts per release; the durable sourcing and typed-wrapping policy is here.
-
-## Wrapping - the typed-service contract
-- Call a plugin only through a typed Angular service - never the plugin API scattered across components. The service is the single owner of the whole native seam: the permission check, the web-fallback branch, the listener lifecycle, and error mapping (a denied permission or missing capability is a `Result` the UI renders, not an unhandled throw).
-- The cross-cutting native features nearly every production app hits - push notifications, deep links / universal links, offline-first sync - are each built as one of these services; their house shapes (token lifecycle, URL-to-route mapping, queue-and-drain) live in `references/native-features.md`.
-
-## Testing the native seams
-- Unit-test the wrapping service, not the device: with the plugin mocked (the runner's spy - `jest.fn()` or `jasmine.createSpyObj`, per `angular-testing`), assert the web-fallback branch and the permission-denied path return the typed `Result` the UI renders. These run in jsdom with no device or emulator.
-- Do not try to drive real native plugin behavior in a jsdom unit test - the bridge is not there, so a test that 'exercises' the native path is only exercising your mock. Keep those tests honest about that boundary.
-- Reserve appium-mcp (opt-in, heavy - needs Xcode/Android SDK + Java) for true device/E2E smoke of the few native-critical flows (push tap -> route, deep-link cold start, an offline-then-reconnect drain). Smoke the handful that would silently break in production, not the whole surface.
-
-<!-- House Ionic/Capacitor conventions; in-app navigation + page lifecycle owned in references/navigation-and-lifecycle.md, the push/deep-link/offline shapes in references/native-features.md; component APIs / theming fetched live via context7 / the Ionic docs. -->
+**Read `references/native-seam.md` before adopting a plugin, wiring a permission cycle, writing a web fallback, or planning device/E2E smoke** - it carries the vetting checklist, the full permission cycle, the three fallback shapes in preference order, and the UNVERIFIED reporting rule for the device-driving MCP class. The push / deep-link / offline-sync service shapes are `references/native-features.md`.

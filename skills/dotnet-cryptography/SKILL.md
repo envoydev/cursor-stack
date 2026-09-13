@@ -1,13 +1,13 @@
 ---
 name: dotnet-cryptography
-description: ".NET cryptography conventions for System.Security.Cryptography - pick the right primitive and use it the one correct way: SHA-2 for integrity, AES-GCM for authenticated encryption, RSA-OAEP/PSS and ECDsa for asymmetric work, PBKDF2 or Argon2id for password hashing, RandomNumberGenerator for entropy, and FixedTimeEquals for any secret comparison. Carries the dead-algorithm list and notes post-quantum ML-KEM/ML-DSA as a .NET 10+ opt-in. Floors at .NET 8 / C# 12. Load when encrypting, decrypting, hashing, signing, verifying, or deriving a key. Secret STORAGE belongs to your secrets/config layer (never source); sign-in to dotnet-authentication; OWASP categories to dotnet-security. Do NOT load for TLS/HTTPS pipeline config."
+description: "Use when encrypting, decrypting, hashing, signing, verifying, or deriving a key in .NET. Conventions for System.Security.Cryptography - pick the right primitive and use it the one correct way; the full roster, the dead-algorithm list and the post-quantum ML-KEM / ML-DSA opt-in are in the body. Floors at .NET 8 / C# 12. Secret STORAGE belongs to your secrets/config layer, never source. Do NOT use for TLS/HTTPS pipeline config, for building a sign-in flow, or for the OWASP category checklist - those are the authentication and security-hardening skills."
 ---
 
 # .NET cryptography
 
 Cryptography in .NET is a library of correct primitives that are easy to assemble incorrectly. The job is almost never to invent a scheme - it is to pick the primitive the situation calls for and use it the single way it is meant to be used. Everything here lives in `System.Security.Cryptography`. Floor is .NET 8 / C# 12, which covers every classical primitive below; post-quantum is a .NET 10+ addition flagged at the end.
 
-Two boundaries this skill does not cross. Where keys and secrets *live* - a vault, a managed key service, environment config - is your secrets layer, never a literal in source and never a checked-in file. Signing a user in is `dotnet-authentication`. This skill is only the math and the API around it. On .NET Framework 4.8 two defaults are footguns - PBKDF2's SHA-1 default and the `RandomNumberGenerator` API name - covered in `references/net-framework-48.md`.
+Two boundaries this skill does not cross. Where keys and secrets *live* - a vault, a managed key service, environment config - is your secrets layer, never a literal in source and never a checked-in file. Signing a user in belongs to the skill covering .NET authentication. This skill is only the math and the API around it. On .NET Framework 4.8 two defaults are footguns - PBKDF2's SHA-1 default and the `RandomNumberGenerator` API name - covered in `references/net-framework-48.md`.
 
 ## First principle: use the static one-shots
 
@@ -54,6 +54,8 @@ aes.Encrypt(nonce, plaintext, ciphertext, tag, associatedData);
 // persist nonce + ciphertext + tag together; Decrypt throws on any tamper
 ```
 
+Prove it in two lines before any done word: encrypt then decrypt and quote the round-trip result, then flip one ciphertext byte, decrypt again and quote the exception. A decrypt that succeeds on the tampered bytes means the tag is not being checked, which is the whole point of GCM gone.
+
 Do not reach for raw `Aes` in CBC/ECB mode. **ECB is never acceptable** - it reveals structure in the plaintext. Plain CBC is unauthenticated and invites padding-oracle attacks; only if a fixed external format forces CBC, apply encrypt-then-MAC with an independent HMAC key and verify the MAC (constant-time) before decrypting. GCM exists precisely so you never have to hand-roll that.
 
 ## Asymmetric
@@ -67,7 +69,7 @@ Reach for asymmetric crypto only when you actually need two parties or a public/
 
 ## Post-quantum (.NET 10+, optional)
 
-.NET 10 introduces the NIST PQC primitives - `MLKem` (key encapsulation), `MLDsa`, and `SlhDsa` (signatures) - over platform crypto (Windows 11 / Windows Server 2025 with the PQC update, or OpenSSL 3.5+). They are **not on the .NET 8 floor**, so treat them as opt-in: gate every call on the type's static `IsSupported` and keep a classical fallback. `MLKem` ships a stable surface; the signature types are still behind the SYSLIB5006 experimental diagnostic, so using them is a deliberate opt-in. The migration-ready move today is hybrid - pair a classical primitive with a PQC one so a future break in either still leaves you covered.
+.NET 10 introduces the NIST PQC primitives - `MLKem` (key encapsulation), `MLDsa`, and `SlhDsa` (signatures) - over platform crypto (Windows 11 / Windows Server 2025 with the PQC update, or OpenSSL 3.5+). They are **not on the .NET 8 floor**, so treat them as opt-in: gate every call on the type's static `IsSupported`, keep a classical fallback, and check via context7 which of the three still carry the SYSLIB5006 experimental mark in your target release before you take the dependency. The migration-ready move today is hybrid - pair a classical primitive with a PQC one so a future break in either still leaves you covered.
 
 ## Dead algorithms - do not use
 
@@ -78,9 +80,4 @@ These appear in old code and tutorials; replace them on sight.
 - **AES-ECB** - leaks plaintext structure. Use GCM.
 - **RSA PKCS#1 v1.5** for encryption or signing - padding-oracle and forgery exposure. Use OAEP / PSS.
 - **A fast unsalted hash for passwords** - use PBKDF2 / Argon2id.
-- **`BinaryFormatter`** - remote-code-execution by design. The floor-aware status and replacement are owned by `dotnet-security` (A08) - reach for it rather than re-deriving the runtime timeline here.
-
-## Companions
-
-- `dotnet-authentication` - sign-in, tokens, and identity, which consume these primitives but own the protocol.
-- `dotnet-security` - OWASP categories, unsafe deserialization, and the wider hardening surface.
+- **`BinaryFormatter`** - remote-code-execution by design. The floor-aware status and replacement belong to the skill covering OWASP hardening (its integrity-failures section); with none installed, the rule here is enough - never call it, and delete any opt-in that re-enables it.

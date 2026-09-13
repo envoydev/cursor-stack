@@ -4,6 +4,12 @@ Owns hand-authored spans and metrics - the layer beyond the provider wiring. Pro
 
 In .NET the instrumentation API is the framework's own `System.Diagnostics` types - `ActivitySource` / `Activity` for traces, `Meter` plus instruments for metrics. OpenTelemetry is only the collection / export layer. A library emits telemetry with `System.Diagnostics.*` and takes no OpenTelemetry package; the consuming app wires the export (that wiring is `dotnet-web-backend`). Never let a telemetry call throw into business logic - `activity?.` guards every access.
 
+## Contents
+
+- Custom spans
+- Choosing a metric instrument
+- Manual context propagation
+
 ## Custom spans
 
 ```csharp
@@ -87,7 +93,7 @@ Names are singular and dotted (`myapp.order.processing.duration`); always set a 
 
 ### Cardinality discipline
 
-Each unique combination of tag values is a separate time series. Bound every tag value to a small finite set - outcome, region, order type. Never tag with a user id, order id, email, or raw exception message: unbounded values explode the series count and take the backend's memory and storage with them. The SDK caps at 2000 combinations per instrument then drops the rest - a safety valve, not a design target. If a high-cardinality dimension is genuinely needed, gate it behind config opt-in.
+Each unique combination of tag values is a separate time series. Bound every tag value to a small finite set - outcome, region, order type. Never tag with a user id, order id, email, or raw exception message: unbounded values explode the series count and take the backend's memory and storage with them. The SDK caps at 2000 combinations per instrument and folds the overflow into a single `otel.metric.overflow=true` series (1.10+; earlier SDKs dropped it) - a safety valve, not a design target. If a high-cardinality dimension is genuinely needed, gate it behind config opt-in.
 
 ### Zero-allocation tags on hot paths
 

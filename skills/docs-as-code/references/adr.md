@@ -5,6 +5,15 @@ characteristics, dependencies, interfaces, or construction technique. The collec
 decision log: the reason a future maintainer is not stuck 'blindly accepting or blindly changing'
 what they inherit.
 
+## Contents
+
+- Core rules
+- Nygard format (the default - lightest ceremony), with a worked ADR
+- MADR 4 (when options were genuinely weighed), with a worked ADR
+- Operational discipline (what actually decides success)
+- House integration
+- Checklist
+
 ## Core rules
 
 - **One decision per record. Short** - one or two pages, so it gets read.
@@ -51,8 +60,8 @@ Adds the tradeoff analysis and metadata. Sections in order: optional YAML front 
 (`status:`, `date:`, `decision-makers:`, `consulted:`, `informed:`), title,
 **Context and Problem Statement**, optional **Decision Drivers**, **Considered Options**,
 **Decision Outcome** ('Chosen option: "...", because ...') with nested **Consequences**
-(Good/Bad bullets) and **Confirmation** (how compliance is verified - in this house, an
-architecture fitness test per `dotnet-architecture-tests` beats a review promise), then optional
+(Good/Bad bullets) and **Confirmation** (how compliance is verified - in this house an
+architecture fitness test beats a review promise, where the stack has them), then optional
 **Pros and Cons of the Options** and **More Information**.
 
 ```markdown

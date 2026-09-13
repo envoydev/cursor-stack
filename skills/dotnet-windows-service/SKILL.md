@@ -1,11 +1,11 @@
 ---
 name: dotnet-windows-service
-description: "Windows Service conventions - the Service Control Manager layer over the .NET generic host: AddWindowsService and the dual-mode binary, SCM start/stop budgets, non-zero exit codes so recovery actions actually fire, the System32 working-directory trap, scripted sc.exe install with recovery actions, gMSA / least-privilege service accounts, unquoted-path and ACL hardening, event-log source registration, and the maintained .NET Framework ServiceBase shape + migration path. Load when building, installing, hardening, or migrating a Windows Service - AddWindowsService / UseWindowsService, sc.exe, ServiceBase, installutil, service accounts, SCM errors like 1053. Companions: dotnet-hosted-services (the host model this stacks on), csharp. Do NOT load for the generic worker/host model itself with no SCM target (dotnet-hosted-services), Linux daemons/systemd, or containerized workers."
+description: "Windows Service conventions - the Service Control Manager layer over the .NET generic host. Load when building, installing, hardening, or migrating a Windows Service - AddWindowsService / UseWindowsService, sc.exe, ServiceBase, installutil, service accounts, SCM errors like 1053. Covers the dual-mode binary, SCM start/stop budgets, non-zero exit codes so recovery actions actually fire, the System32 working-directory trap, scripted sc.exe install with recovery actions, gMSA / least-privilege service accounts, unquoted-path and ACL hardening, event-log source registration, and the maintained .NET Framework ServiceBase shape + migration path. Do NOT load for the generic worker/host model itself with no SCM target - that is the hosted-worker skill - nor for Linux daemons/systemd or containerized workers."
 ---
 
 # Windows Services - the SCM layer
 
-A Windows Service is the same generic-host worker `dotnet-hosted-services` teaches - **load that skill first**; the host shape, `BackgroundService`, scope-per-work, stopping-token, and shutdown discipline all live there and apply unchanged. This skill owns what the Service Control Manager adds on top. The SCM does not care which runtime you use, so the operational surface below - install, accounts, recovery, paths, ACLs, budgets - is identical for modern .NET and .NET Framework; only the in-process shape differs.
+A Windows Service is the same generic-host worker the house skill covering .NET hosted services teaches (`BackgroundService`, the Generic Host, scope-per-work, the stopping token, shutdown discipline) - **load that skill first, matched from your skill list by what it covers**; when nothing matches, the host-shape rules below still apply, only their deep dive is missing. The host shape, `BackgroundService`, scope-per-work, stopping-token, and shutdown discipline all live there and apply unchanged. This skill owns what the Service Control Manager adds on top. The SCM does not care which runtime you use, so the operational surface below - install, accounts, recovery, paths, ACLs, budgets - is identical for modern .NET and .NET Framework; only the in-process shape differs.
 
 **Platform verdict.** New services: current LTS .NET, Worker template, `AddWindowsService()` - there is no scenario where a greenfield service starts on .NET Framework. Existing Framework services are not a burning platform (4.8/4.8.1 is an OS component with no standalone end date) - the real migration driver is NuGet packages dropping `net48`, so audit the package graph, and migrate when you touch the service anyway; the maintained Framework shape and the migration path are `references/framework-services.md`. Topshelf is archived (July 2022) - never for new work; `AddWindowsService()` plus a scripted `sc.exe` install covers it.
 
@@ -32,6 +32,15 @@ The full scripted install, upgrade flow, secrets ranking, and diagnostics are `r
 - **Unquoted service path** is a real privilege-escalation class: a binpath with spaces and no quotes lets `C:\Program.exe` run with service privileges. Always quote; keep the install directory non-writable by non-admins; check `sc sdshow` that non-admins cannot reconfigure the service.
 - **Event-log source registered at install time** - creating one needs admin rights, so first-log-write registration fails under a least-privilege account.
 - No plaintext secrets in config, source control, or environment variables (env vars are unencrypted and land in crash dumps) - the ranked options (Key Vault, Data Protection with explicit key encryption, DPAPI LocalMachine) are in the operations reference.
+
+**Verify the install landed** by reading the SCM's own record back - the install script's exit code proves only that `sc.exe` parsed its arguments:
+
+```text
+sc qc <name>        -> BINARY_PATH_NAME quoted, SERVICE_START_NAME the intended account, START_TYPE 2 DELAYED
+sc qfailure <name>  -> the recovery actions you scripted, not "RESTART -- Delay = 0 msec" defaults
+```
+
+Either output missing its expected line means the install did not take - fix the script and re-run before hardening anything else.
 
 ## A service that is RUNNING but stuck
 

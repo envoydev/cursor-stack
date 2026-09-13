@@ -1,51 +1,74 @@
 ---
 name: project-build-from-scratch
-description: "Build a new application or major module from scratch - greenfield design, scaffolding, and build orchestration, before code exists. DESIGN runs IN-SESSION on this skill's opus/xhigh pinned turn: the spec becomes 2-3 reasoned architecture options and the user picks - nothing is scaffolded before that pick. Then the stack's real new-project command + baseline wiring, then the build slice by slice - through the domain seats or in-session, per the run-start ask. Not for changing an existing codebase - a feature inside a live app is `project-solve-cross-task`, a new module in an existing repo is the project-architecture-analyzer capture plus that stack's solution-designer. Triggers on build from scratch, new project, greenfield, scaffold, start a new app."
+description: "Build a new application or major module from scratch. Use when the user asks to build from scratch, start a new project or app, go greenfield, or scaffold - before any code exists; manual, /-only. DESIGN runs IN-SESSION on the strongest reasoning model (checked at run start - a skill carries no model pin): the spec becomes 2-3 reasoned architecture options and the user picks, and nothing is scaffolded before that pick. Then the stack's real new-project command + baseline wiring, then the build slice by slice, through the domain seats or in-session per the run-start ask. Not for changing an existing codebase - a feature inside a live app is `project-solve-cross-task`, a new module in an existing repo is the project-architecture-analyzer capture plus that stack's solution-designer."
 disable-model-invocation: true
 ---
 
 # Project Build From Scratch - Greenfield Design, Scaffold, Build
 
-Use this skill to build a new application or a major new module from scratch, before code exists. The design happens here, in-session - there is no dispatched greenfield seat: with no code to read, a design pass reasons from the spec that is already in this conversation, and its options come back to the user anyway. The frontmatter pins the invoking turn to `opus`/`xhigh`, so DESIGN runs on the architect's budget regardless of the session model (the pin lasts the turn - after the user's pick, orchestration resumes on the session model, which is fine: scaffold and build are dispatch mechanics).
+Use this skill to build a new application or a major new module from scratch, before code exists. The design happens here, in-session - there is no dispatched greenfield seat: with no code to read, a design pass reasons from the spec that is already in this conversation, and its options come back to the user anyway. A skill carries no model pin, so DESIGN runs on whatever model the session is on: check it at run start, and when it is not your strongest reasoning model, say so in the opening line, so the switch can happen before the options are reasoned. After the user's pick the session can drop to a cheaper model, which is fine: scaffold and build are dispatch mechanics.
 
 ## Steps
 
-### 1. DESIGN - in-session, on the pinned turn
+### 1. DESIGN - in-session, on the strongest model
 Turn the spec into 2-3 reasoned architecture options - stack, architecture style, folder/module shape, state and persistence approach - each with its tradeoffs, using the brainstorming discipline plus the stack's architecture skills (the per-stack table below names them). Ground every option in the house skills, not recall. A spec gap that blocks the design is a question to the user (the superpowers brainstorming + `an explicit question` path), never a guess. Multi-stack designs name the seam and its producer/consumer direction up front - the build step will run it producer-first per `project-solve-cross-task`.
 
 ### 2. THE PICK - hard gate
 Present the options, then put the pick through an explicit question - one option per architecture, its stack and one-line tradeoff as the description, a custom direction always available via Other (plain-text options where the harness lacks the tool). Greenfield tech choices are the user's, never silently picked - nothing is scaffolded before this gate.
 
 ### 3. SCAFFOLD
-Run the named new-project command (`dotnet new <template>`; `ng new`; `ionic start` for Ionic), establish the structure from the chosen architecture skill, and wire the baseline - DI, config, a test project, formatter/analyzer config - via the stack's setup skills (`dotnet-project-setup` + `dotnet-code-quality` on .NET).
+Run the named new-project command (`dotnet new <template>`; `ng new`; `ionic start` for Ionic), establish the structure from the chosen architecture skill, and wire the baseline - DI, config, a test project, formatter/analyzer config - via the stack's own project-setup and code-quality skills where the project installed them. With neither installed, wire that baseline from the chosen architecture skill plus the template's own vendor defaults, and say in the report that it was done without them.
 
 ### 4. BUILD - slice by slice
-When dispatch is available, ask ONE question before the first slice, as one explicit question - build in the current session, or dispatch the stack seats? - then hold the answer for the run (an invocation that already names the mode is the answer); no dispatch (Cursor) or a scaffold too small to fan out is INLINE without asking. DELEGATED: for each vertical slice, dispatch that slice's stack seats directly from the main session - its designer, then implementer(s), then verifier (the domain-trio vertical - this skill's own `references/domain-trio-protocol.md`); before the first implementer fans out, write the approval gate file `<docs-path>/flow/APPROVAL`, first line `APPROVED <plan id> - "<the user's words, verbatim>"` on their explicit approval, or `AUTO - "<their words, verbatim>"` only on a literal no-stops ask (the dispatch hook blocks an unstamped implementer; delete it when the run completes); reds route to the matching resolver. A multi-stack slice runs producer-first with the recorded interface, per `project-solve-cross-task`. Loop until the spec's first milestone is met. INLINE (chosen or forced): do the slices in-session with writing-plans + the architecture skills instead of dispatching.
+When dispatch is available, ask ONE question before the first slice, as one explicit question - build in the current session, or dispatch the stack seats? - then hold the answer for the run (an invocation that already names the mode is the answer); no dispatch capability or a scaffold too small to fan out is INLINE without asking.
 
-### 5. HANDOFF
-First milestone green: suggest the captures - `/project-architecture-analyzer` and `/project-code-style-analyzer` - so the new repo gets its map, style doc, and generated awareness rules; from here on the standing flow machinery owns the project.
+**DELEGATED** - for each vertical slice, dispatch that slice's stack seats directly from the main session (its designer, then implementer(s), then verifier - the domain-trio vertical, this skill's own `references/domain-trio-protocol.md`). Before the first implementer fans out, stamp the approval gate, in three parts:
+
+- *Shape* - write `<docs-path>/flow/APPROVAL`, first line `APPROVED <plan id> - "<the user's words, verbatim>"` on their explicit approval, or `AUTO - "<their words, verbatim>"` only on a literal no-stops ask. The dispatch hook blocks an unstamped implementer; delete the file when the run completes.
+- *Path* - write it at the project root's `<docs-path>`, never relative to wherever the shell's working directory drifted - a stamp in the wrong tree is no stamp, and the dispatch then bounces.
+- *Ownership* - the stamp belongs to the session that dispatches, written when its own decision lands and deleted at its own close; an earlier session's leftover stamp is not consent.
+
+Then: reds route to the matching resolver seat for that stack where one is installed, and are fixed in-session where none is. A multi-stack slice runs producer-first with the recorded interface, per `project-solve-cross-task`. Loop until the spec's first milestone is met.
+
+**INLINE** (chosen or forced) - do the slices in-session with writing-plans plus the architecture skills instead of dispatching.
+
+### 5. HANDOFF - the close, as a field template
+First milestone green. Close on a literal line template, not prose to remember - one line per field, a table where a field lists several items:
+
+```
+Stack:     <the option the user picked - stack, architecture style, state/persistence, in one line>
+Scaffold:  <the new-project command actually run> + <the baseline wired: DI, config, test project, formatter/analyzer>
+Slices:    <n> built, <n> verified green - <the milestone reached>
+Baseline:  build <green|red>, tests <n passed / n failed>, quoted from the command that produced it
+Leftovers: APPROVAL stamp <deleted|still present>; <anything this run started and left up - a container, seeded data, a background process - or `none started`>
+Next run:  /project-architecture-analyzer then /project-code-style-analyzer, each in a FRESH session
+```
+
+Every count comes from the command that produced it, never a hand tally. The two captures in `Next run:` are named TO THE USER as their next commands, never invoked from here - both are manual, /-only captures, and both want a fresh session anyway. They give the new repo its map, style doc, and generated awareness rules, and from there the standing flow machinery owns the project.
 
 ## Per-stack scaffolding
 
-| Stack | new-project command | Architecture + convention skills |
+**Availability** - each row's skills exist only where that stack was installed; match them from your skill list by what each covers, and a skill absent because the project is greenfield (an evidence-gated specialist arrives only once code shows the need) is designed around from the stack's hub skill and the vendor docs, never guessed by name.
+
+| Stack | new-project command | Architecture + convention skills to match from your skill list |
 |---|---|---|
-| Angular web | ng new | `angular-conventions` + `angular-styling` |
-| Ionic/Capacitor mobile | ionic start + cap add | `ionic` + `mobile` |
-| ASP.NET Core backend | dotnet new webapi/web | `dotnet-architecture` + `dotnet-web-backend` / `dotnet-minimal-api` |
-| WPF desktop | dotnet new wpf | `dotnet-wpf` (strict MVVM) |
-| SQL / data | first schema | `database-conventions` + `dotnet-migrate` |
+| Angular web | ng new | the Angular framework-conventions skill + the Angular CSS/SCSS styling skill |
+| Ionic/Capacitor mobile | ionic start + cap add | the Ionic/Capacitor conventions skill |
+| ASP.NET Core backend | dotnet new webapi/web | the .NET architecture skill + the ASP.NET web/API skill, or its minimal-API specialist where the design picked that shape |
+| WPF desktop | dotnet new wpf | the WPF conventions skill (strict MVVM) |
+| SQL / data | first schema | the cross-engine database-conventions skill + the .NET migrations skill |
 
 ## Example
 
 Brief: 'Start a new Angular admin dashboard.'
 1. **DESIGN** in-session: three options - standalone + signals with feature folders; NgRx-backed modular; minimal-shell MVP - each with routing, state tier, folder shape, and the tradeoff that decides it.
 2. **THE PICK**: the user chooses option one.
-3. **SCAFFOLD**: `ng new admin`, structure per `angular-conventions`, wire lint/format config, a test setup, the core routing shell.
-4. **BUILD**: first slice (the auth shell) - dispatch web-angular-solution-designer, then the angular implementer(s), then web-angular-verifier; loop the punch-list. Repeat per slice to the first milestone.
+3. **SCAFFOLD**: `ng new admin`, structure per the Angular framework-conventions skill, wire lint/format config, a test setup, the core routing shell.
+4. **BUILD**: first slice (the auth shell) - dispatch the web-Angular stack's own trio in order, its solution-designer, then its implementer(s), then its verifier; loop the punch-list. Repeat per slice to the first milestone.
 5. **HANDOFF**: suggest the captures so the repo gets its map and style artifacts.
 
 ## Rules
 - Greenfield architecture and tech choices are the user's - present options, get the pick, never scaffold before it.
-- Design from the house architecture skills, not recall - this skill routes to them, it does not re-derive structure. Version-sensitive choices check context7, never memory.
+- Design from the house architecture skills, not recall - this skill routes to them, it does not re-derive structure. Version-sensitive choices check the library-docs MCP (context7 where the project kept it) or the vendor doc, never memory - an option resting on a claim no doc backs says `unverified`.
 - The main session is the only orchestrator - never instruct a subagent to dispatch another; the domain seats this skill fans out carry no Task tool.
 - An honest NEEDS_CONTEXT beats a guessed design: a blocking spec question goes to the user before options are locked.

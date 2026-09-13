@@ -2,6 +2,31 @@
 
 The authoritative TypeScript/JavaScript *tooling and style* reference: the concrete tsconfig, ESLint, Prettier, and .editorconfig setup plus the rule-by-rule conventions they enforce. `SKILL.md` owns the conceptual model (why the compiler is a test, discriminated unions, branding, the two failure channels); this document owns the concrete tool config and the enforcement rules - where they overlap, this reference wins. Above both, a project's own config (its `.editorconfig`, `eslint.config.mjs`, `.prettierrc`, `tsconfig.json`) and its `<docs-path>/PROJECT-CODE-STYLE.md` are HIGHER priority: where a project diverges from these general conventions, follow the project.
 
+## Contents
+
+- TL;DR
+- Baseline tooling
+- tsconfig.json compiler options
+- Naming conventions
+- File and folder naming
+- Types vs interfaces
+- any vs unknown
+- Type inference vs explicit annotations
+- readonly and immutability
+- Array and type syntax (stylistic defaults)
+- null / undefined handling
+- Functions
+- Classes
+- Imports / exports
+- Error handling
+- async / await
+- General best practices
+- Prettier config (`.prettierrc`)
+- .editorconfig
+- Good vs bad examples
+- Recommendations (staged)
+- Caveats
+
 ## TL;DR
 - Baseline: typescript-eslint `strict` + `stylistic` (or their `-type-checked` variants with typed linting), TypeScript `strict: true`, plus Prettier for formatting.
 - The tooling defaults are the standard: interfaces preferred (consistent-type-definitions = 'interface'), `T[]` array syntax (array-type = 'array'), no `any` (prefer `unknown`), no non-null assertions, camelCase/PascalCase/UPPER_CASE naming.
@@ -30,7 +55,7 @@ export default defineConfig({
 });
 ```
 
-Stability note: typescript-eslint's Shared Configs docs state that 'with the exception of all, strict, and strict-type-checked, all configurations are considered stable', and that strict 'is not considered stable under Semantic Versioning (semver). Its enabled rules and/or their options may change outside of major version updates.' `stylistic` and `recommended` are stable. typescript-eslint v8 is the current stable major (the project-service typed-linting API was promoted to stable in v8). Pin your version regardless.
+Stability note: typescript-eslint's Shared Configs docs state that 'with the exception of all, strict, and strict-type-checked, all configurations are considered stable', and that strict 'is not considered stable under Semantic Versioning (semver). Its enabled rules and/or their options may change outside of major version updates.' `stylistic` and `recommended` are stable. `projectService` is the stable typed-linting API (promoted in v8); confirm the current major via context7 at setup time and pin your version regardless.
 
 ## tsconfig.json compiler options
 Start from `strict: true`, which turns on the whole strict family: noImplicitAny, strictNullChecks, strictFunctionTypes, strictBindCallApply, strictPropertyInitialization, noImplicitThis, useUnknownInCatchVariables, alwaysStrict.

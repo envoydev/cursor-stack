@@ -1,6 +1,6 @@
 ---
 name: dotnet-testing
-description: ".NET testing hub - the architecture-neutral approach for unit / integration / E2E tests, not a single library: AAA structure, a test strategy keyed off responsibility, coverage mechanics (the exclusion catalog + after-exclusions semantics; the % bar itself is user-set via project-test-coverage-analyzer), and runner / substitute / assertion library routing (xUnit, NSubstitute, FluentAssertions 7.x as defaults). Floors at .NET 8 / C# 12. Load before writing, modifying, or reviewing .NET tests, auditing test quality / smells, running mutation testing, or configuring coverage - do not rely on recall. Companions: csharp, dotnet-web-error-handling; Testcontainers, Aspire-orchestrated integration, and Verify/snapshot testing are folded in here as references/. Do NOT load for Angular/Jasmine/Karma/Jest (angular-testing) or plain TS/JS suites (ts-js-testing)."
+description: "Use before writing, modifying, or reviewing .NET tests, auditing test quality or smells, running mutation testing, or configuring coverage - do not rely on recall. The .NET testing hub: the architecture-neutral approach for unit / integration / E2E tests, not a single library. Defaults are xUnit, NSubstitute and FluentAssertions 7.x; coverage mechanics, library routing, Testcontainers, Aspire integration and snapshot testing are in `references/`. Floors at .NET 8 / C# 12. Do NOT load for Angular or Ionic tests, or for plain TS/JS outside a framework harness - the Angular and the TypeScript/JavaScript testing skills own those."
 ---
 
 # .NET Testing Approach
@@ -11,7 +11,7 @@ This skill captures the **approach**, not a single library. The principles below
 
 ## Test strategy by responsibility (architecture-neutral)
 
-The strategy keys off the *role* a unit plays, not a layer name - so it maps onto whatever architecture the project picked. `dotnet-web-backend` owns the load-exactly-one-architecture rule but mandates no specific one. In a layered (Clean / Onion) project the roles below are the layers; in a vertical-slice / modular project they are the parts of a feature folder (the domain types, the handler / endpoint logic, the infrastructure wiring) - test each part the same way regardless of where it physically lives.
+The strategy keys off the *role* a unit plays, not a layer name - so it maps onto whatever architecture the project picked (the pick-one rule lives with the architecture decision, not here). In a layered (Clean / Onion) project the roles below are the layers; in a vertical-slice / modular project they are the parts of a feature folder (the domain types, the handler / endpoint logic, the infrastructure wiring) - test each part the same way regardless of where it physically lives.
 
 - **Domain / business rules** - pure unit tests, no substitutes. Cover entities, value objects, domain services, domain events, invariants, guard clauses, factory methods, and every branch of a business rule including exception paths - this is the code where an uncovered branch is never acceptable.
 - **Use cases / handlers / orchestration** (the application logic of a slice or layer) - unit tests with all ports and abstractions substituted. Cover success paths, validation failures, exception handling, and orchestration branches.
@@ -47,49 +47,13 @@ The strategy keys off the *role* a unit plays, not a layer name - so it maps ont
 
 ## Library choices
 
-Runner, substitute library, and assertion library are project-level decisions. Pick one per category and stay consistent across the test project.
-
-### Test runners
-
-| Runner | When to pick |
-|---|---|
-| **xUnit** | Default for new projects. `[Fact]` / `[Theory]` + `[InlineData]` / `[MemberData]` / `[ClassData]`. No `[SetUp]` / `[TearDown]` - use constructor + `IDisposable` / `IAsyncLifetime`. Parallel by default. |
-| **NUnit** | When the project already uses it, or for parameterized-test ergonomics (`[TestCase]`, `[TestCaseSource]`, `[Values]`, `[ValueSource]`). |
-| **MSTest** | When the project ships with it (Visual Studio templates, internal Microsoft tooling). `[TestClass]` / `[TestMethod]` / `[DataRow]` / `[DynamicData]`. |
-
-Do not mix runners in one project. Migrate, don't blend.
-
-### Substitute / mock libraries
-
-| Library | API style | When to pick |
-|---|---|---|
-| **NSubstitute** | Substitutes (`Substitute.For<T>()`); record/replay-free, terse syntax (`x.M(Arg.Any<int>()).Returns(...)`); loose by default - unconfigured members return defaults; `Received()` throws only when an expected call was not made. | Default for new projects. Fluent, readable in AAA. |
-| **Moq** | Mocks (`new Mock<T>()`); `.Setup(...).Returns(...)`, `.Verify(...)`. Loose by default; `MockBehavior.Strict` opts into strict. | When project already uses Moq, or when tooling/team familiarity argues for it. |
-| **FakeItEasy** | Fakes (`A.Fake<T>()`); `A.CallTo(() => fake.M(...)).Returns(...)`, `A.CallTo(...).MustHaveHappened()`. | Project preference; mature alternative with natural English DSL. |
-
-Same project = one substitute library. Don't half-port.
-
-Common rules regardless of library:
-- Substitute only what you cannot construct (external services, ports, infrastructure). Prefer real instances for value objects, records, simple aggregates.
-- Default to loose / non-strict; only assert calls that are part of the contract under test.
-- Do not call `Received()` / `Verify()` / `MustHaveHappened()` on every interaction - verify the boundary that matters, leave the rest implicit.
-
-### Assertion libraries
-
-| Library | When to pick |
-|---|---|
-| **FluentAssertions 7.x** | Default. Rich diff output, structural equality, async support. Stay on 7.x: v8+ moved to a paid commercial license - upgrading a client project is a licensing decision, not a routine bump. |
-| **AwesomeAssertions** | Apache-2.0 community fork taken from FluentAssertions' last Apache-licensed release (v7) and developed forward independently. Drop-in choice when you want a permissive license and ongoing fixes without FA v8's commercial terms. |
-| **Shouldly** | Project preference. Simpler API; good when FA's surface area feels heavy. |
-| **xUnit/NUnit/MSTest built-in `Assert`** | When the project has no FA/Shouldly dependency and stays minimal. |
-
-Snapshot / Verify assertions - approving serialized output instead of hand-written asserts - are `references/snapshot-testing.md`.
+Defaults for a new project: **xUnit** runner, **NSubstitute** substitutes, **FluentAssertions 7.x** assertions (v8+ needs a paid commercial licence, so an upgrade is a licensing decision, not a routine bump; the Apache-2.0 fork AwesomeAssertions is the permissive way forward). One runner, one substitute library and one assertion library per project - migrate, never blend. When the project has already picked, or is picking now, the alternatives and the reason for each are `references/library-routing.md`. Substitute only what you cannot construct, stay loose rather than strict, and verify the boundary that matters instead of every interaction. Snapshot / Verify assertions - approving serialized output instead of hand-written asserts - are `references/snapshot-testing.md`.
 
 ### Coverage collection
 
 - **coverlet** is the default collector (msbuild or runsettings). Combined with `dotnet test --collect:"XPlat Code Coverage"`.
 - Reports via `ReportGenerator` for HTML / Cobertura / OpenCover formats.
-- Pair with `dotnet-code-quality`'s `references/crap-analysis.md` (when installed) for CRAP-score risk hotspots.
+- For CRAP-score risk hotspots, pair the coverage report with a complexity pass: CRAP = cyclomatic complexity weighed against that method's coverage, so a long, branchy, thinly-covered method ranks above a simple uncovered one. ReportGenerator emits complexity per method beside coverage, which is enough to rank; where the repo has a dedicated analysis for it, use that instead, and with neither, rank by uncovered branches alone.
 
 ## Test project conventions
 
@@ -124,8 +88,8 @@ The rules above are for *writing* tests; reviewing an existing suite is its own 
 
 ## Routing (cross-skill)
 
-A row whose skill is absent means the area is absent here, not a broken pointer.
+These areas sit outside this skill. Where your skill list has nothing covering one, the note beside it is what to do instead.
 
-- Performance microbenchmarks -> `dotnet-diagnostics` (its `references/microbenchmarking.md`); crash / hang dump capture -> `dotnet-diagnostics` (its `references/dumps.md`).
-- Reward-hacking / coverage-gaming check before 'done' -> `dotnet-code-quality`; CRAP-score risk hotspots -> its `references/crap-analysis.md` (paired at §Coverage above).
-- Testability refactors, the clock seam, and async-returns-`Task`-not-`void` are baseline rules owned by `csharp`; exception / Result shapes under assertion -> `dotnet-web-error-handling`. Full .NET index: `dotnet`.
+- Performance microbenchmarks and crash / hang dump capture belong to the skill covering live-process measurement (BenchmarkDotNet, dotnet-dump, dotnet-gcdump). A test is not a benchmark: without that skill, keep timing assertions out of the suite entirely rather than approximating one.
+- The reward-hacking / coverage-gaming check before any 'done' belongs to the skill covering .NET analyzers and build-gate enforcement; the CRAP ranking is paired at §Coverage above. Without it, the shortcuts to refuse are still the obvious ones: a skipped test, a weakened assertion, a lowered threshold.
+- Testability refactors, the clock seam, and async-returns-`Task`-not-`void` are baseline rules owned by `csharp`. Exception and Result shapes under assertion belong to the skill covering HTTP error handling; without it, assert the shape the production code already returns rather than inventing an envelope.

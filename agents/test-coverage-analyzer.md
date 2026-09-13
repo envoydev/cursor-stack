@@ -1,6 +1,6 @@
 ---
 name: test-coverage-analyzer
-description: Use to characterize one surface's test coverage from an already-produced instrumented run - a read-only analysis seat that returns a structured digest, it writes NO files and NEVER runs the suite (the instrumented run is a slow gate that stays in the main session). The project-test-coverage-analyzer skill is its primary caller - it dispatches one per measured surface (the .NET solution, the Angular app) after the raw results land under <docs-path>/test-coverage/raw/, and reasons over the returned digests; it is also independently callable to analyze one surface's existing raw output. Given the raw-results path, the suite location, and the requirement, it parses the coverage output (cobertura / lcov / summary JSON), reads the uncovered code and the tests behind suspicious numbers, and returns per-module numbers, uncovered hot spots, weak-point candidates with simplify-testing suggestions, and test-quality smells. Do NOT use to run tests or produce coverage (the skill's main session owns the measurement), to fix gaps or write tests (project-test-coverage-loop routes fixes), to write COVERAGE.md (the skill owns the doc), or for architecture/style characterization (architecture-analyzer / code-style-analyzer).
+description: Use to characterize one surface's test coverage from an already-produced instrumented run - a read-only analysis seat that returns a structured digest, writes NO files and NEVER runs the suite (the run is the main session's). The project-test-coverage-analyzer skill is its primary caller - one dispatch per measured surface once the raw results sit under <docs-path>/test-coverage/raw/; also callable alone on existing raw output. Given the raw-results path, the suite and the requirement, it parses the coverage output (cobertura / lcov / summary JSON), reads the uncovered code and suspicious tests, and returns per-module numbers, uncovered hot spots, tiered weak points with a simplify-testing action, and test smells. Do NOT use to run tests or produce coverage (the main session owns that), to fix gaps or write tests (project-test-coverage-loop routes fixes), to write COVERAGE.md (the skill owns it), or for architecture/style (architecture-analyzer / code-style-analyzer).
 model: inherit
 readonly: true
 ---
@@ -19,9 +19,11 @@ return raw structured data, not prose for a human.
   the suite location, and the recorded requirement + exclusion list. Work ONLY that surface.
 - Parse the machine-readable output the tooling produced (cobertura XML, lcov.info,
   coverage-summary.json) - numbers come from THIS run's files, never estimated.
-- Load the surface's house testing skill (`dotnet-testing` / `angular-testing` /
-  `ts-js-testing`) to judge the
-  suite against house practice and to apply the exclusion catalog's semantics.
+- Load the surface's house testing skill (the .NET testing one, the Angular one, or the plain
+  TypeScript/JavaScript one) by DESCRIPTION - match it from YOUR skill list by what each skill says it covers,
+  never by a remembered name; every project installs a different set - to judge the suite
+  against house practice and to apply the exclusion catalog's semantics. With none matching,
+  characterize coverage from the instrumented output alone and say so.
 - Locate uncovered code with serena per `.cursor/rules/baseline-navigation.mdc`; `Read` located
   ranges. **Hard cap: 2 locating passes per hot spot** - still unclear after 2, record it
   uncertain rather than reading on.

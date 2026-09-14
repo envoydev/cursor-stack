@@ -118,20 +118,22 @@ Template:   read - references/generated-rule-template.md
 Inventory:  skills <n> / seats <n> / MCP servers <n>
 Drift:      <the paths the precheck printed, or `user asked for a refresh` / `user-level MCP only`>
 Live from:  next session - an always-on rule is read at session start, so it does not govern this one
-Next run:   start the next deliberate run in a FRESH session - /<the command they named>
+Next run:   start any next deliberate run in a FRESH chat
 Flags:      <one row each, or `none`>
 ```
 
 Every count comes from the command that produced the list, never from a hand tally. Pipe the inventory through `wc -l`, or quote the number the listing printed.
 `Live from:` and `Next run:` are UNCONDITIONAL and identical on both branches - a rule is read at
 session start either way, and the first-act session is the one most likely to run something else
-next. The FIRST-ACT test itself stays mechanical - this run was NOT the session's first act when a
+next. `Next run:` names NO skill - never this one, which just ran, and never another by default: a
+capture is suggested only where its output is stale. Cursor has no fresh-session hook, so this
+line is the only guard against chaining a second deliberate run into this chat. The FIRST-ACT test itself stays mechanical - this run was NOT the session's first act when a
 user message, a tool call or another skill run precedes it in the chat - and it is now only a
 detail in the sentence, not a branch that changes what is owed.
 
 Then the prose, short - four things, each its own line so none of them is skimmed past:
 
-- **Say `Live from:` the one way it is true on BOTH branches** - an always-on rule loads at session start, not retroactively, so this one governs from the next session and its guidance starts applying in the next fresh chat. Name the next deliberate skill in `Next run:` by name.
+- **Say `Live from:` the one way it is true on BOTH branches** - an always-on rule loads at session start, not retroactively, so this one governs from the next session and its guidance starts applying in the next fresh chat.
 - **Two flags are MECHANICAL - compute them, do not eyeball them**: (a) intersect the parsed `.cursor/mcp.json` names against the heavy-native-deps list {`chrome-devtools`, `appium-mcp`} and report every hit as its own row; (b) `ls .cursor/rules/` in step 1 and report any seat family with no matching convention rule. Also flag a slash-only skill whose seats are not installed.
 - **Never infer causation you cannot observe** - state observed facts plainly, and never assert WHY something is installed or disabled: Cursor exposes no per-project plugin inventory, so install-scope causation is unknowable from inside a session, and a confident guess is the measured failure mode.
 - **Say that the rule is MACHINE-LOCAL, not committed** - the installer tells every project to gitignore `.cursor`, so this file is untracked, a fresh clone does not carry it, and the command has to be re-run there.

@@ -197,3 +197,42 @@ test('guard-secret-value: an unparseable or non-shell payload is allowed, never 
     'a tool this guard does not judge');
   assert.equal(pre(`cat ${F.secret}`, { CURSOR_PROJECT_DIR: '' }), 'rewrite', 'an absolute path needs no project dir');
 });
+
+// Ported with the peer stack's fix. Measured there (a .NET appsettings.Staging.json): the redacted view printed the
+// Postgres and Redis passwords inside their connection strings and a Firebase PEM private key.
+test('guard-secret-value: a password inside a connection string or URL, and a PEM private key, are credentials too', () => {
+  const pem = '-----BEGIN PRIVATE KEY-----\nMIIEvFAKEfakeFAKE\n-----END PRIVATE KEY-----\n';
+  const pg = 'FakePgPass123';
+  const app = w('appsettings.Staging.json', JSON.stringify({
+    ConnectionStrings: { Postgres: `Host=db.test;Database=app;Password=${pg}`, Redis: 'cache.test:6379,password=FakeRedisPass456,ssl=True' },
+    Firebase: { PrivateKey: pem },
+  }, null, 2));
+  const view = cli('--redacted', app).stdout;
+  for (const v of [pg, 'FakeRedisPass456', 'MIIEvFAKEfakeFAKE']) assert.ok(!view.includes(v), `${v} never appears in the view`);
+  assert.match(view, new RegExp(`Host=db\\.test;Database=app;Password=<set \\(${pg.length} chars\\)>`), 'the rest of the connection string stays readable');
+  assert.match(view, /"PrivateKey": "<set \(\d+ chars\)>"/);
+  assert.equal(read(w('conn.json', JSON.stringify({ ConnectionStrings: { Default: 'Server=x;Password=FakePw999' } }))), 'deny', 'a connection-string password alone');
+  assert.equal(read(w('url.json', JSON.stringify({ Url: 'postgres://app:FakeUrlPw777@db.test/app' }))), 'deny', 'a URL userinfo password');
+  assert.equal(read(w('noconn.json', JSON.stringify({ ConnectionStrings: { Default: 'Server=x;Trusted_Connection=True' }, Url: 'postgres://app:${env:PG_PW}@db/app' }))), 'allow', 'no live password');
+});
+
+test('guard-secret-value: a command that also CHANGES something is denied, never silently cut down to the redacted view', () => {
+  const cmd = `F=${F.secret}\nN=$(grep -c SENTRY_SLUG "$F")\n[ "$N" = 1 ] && sed -i '' 's/acme/acme2/' "$F" && jq -r '.env.SENTRY_SLUG' "$F"`;
+  assert.equal(pre(cmd), 'deny', 'preToolUse denies instead of rewriting');
+  assert.equal(shell(cmd), 'deny', 'and so does beforeShellExecution');
+  assert.match(preTool(cmd).stderr + preTool(cmd).stdout, /nothing ran/i);
+  assert.equal(pre(`cat ${F.secret} && npm run build`), 'deny', 'a build after the dump');
+  assert.equal(pre('echo $SENTRY_ACCESS_TOKEN && rm -rf gone'), 'deny', 'the variable rewrite drops steps the same way');
+  assert.equal(pre(`cd ${ROOT} && ls && cat settings.json; echo done`), 'rewrite', 'read-only company is still rewritten');
+});
+
+test('guard-secret-value: a narrow read keeps its own filter over the redacted view', { skip: process.platform === 'win32' }, () => {
+  const view = `node "${HOOK}" --redacted "${F.secret}"`;
+  assert.equal(rewritten(`grep -n SENTRY_SLUG ${F.secret}`), `${view} --note-to-stderr | grep -n SENTRY_SLUG`);
+  assert.equal(rewritten(`head -3 ${F.secret} | tail -1`), `${view} --note-to-stderr | head -3 | tail -1`);
+  assert.equal(rewritten(`cat ${F.secret}`), view, 'a whole-file dump is still the whole view');
+  const g = spawnSync('bash', ['-c', rewritten(`grep -n SENTRY ${F.secret}`)], { encoding: 'utf8', env: ENV });
+  assert.match(g.stdout, /"SENTRY_ACCESS_TOKEN": "<set \(40 chars\)>"/);
+  assert.ok(!(g.stdout + g.stderr).includes(FAKE_TOKEN));
+  assert.match(g.stderr, /line numbers count the view/);
+});

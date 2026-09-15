@@ -146,6 +146,7 @@ bash $STACK/scripts/cursor-stack.sh install work            # space 'work' -> me
 bash $STACK/scripts/cursor-stack.sh install github-cli
 bash $STACK/scripts/cursor-stack.sh install context7-local  # local npx context7 (default: remote hosted server)
 bash $STACK/scripts/cursor-stack.sh install sentry-oauth    # sentry MCP via OAuth sign-in, no token header (default: sentry-token)
+bash $STACK/scripts/cursor-stack.sh install playwright-chrome playwright-firefox playwright-on-firefox  # one server per browser (chrome|msedge|firefox|webkit; default chrome; kept on update), firefox the one left on
 ```
 
 ```powershell
@@ -157,6 +158,7 @@ pwsh $Stack\scripts\cursor-stack.ps1 install work          # space 'work' -> mem
 pwsh $Stack\scripts\cursor-stack.ps1 install -GitHubCli    # install gh (switch)
 pwsh $Stack\scripts\cursor-stack.ps1 install -Context7 local  # local npx context7 (default: remote)
 pwsh $Stack\scripts\cursor-stack.ps1 install -SentryAuth oauth  # sentry MCP via OAuth sign-in, no token header (default: token)
+pwsh $Stack\scripts\cursor-stack.ps1 install -PlaywrightBrowsers chrome,firefox -PlaywrightEnabled firefox  # one server per browser (chrome|msedge|firefox|webkit; default chrome; kept on update), firefox the one left on
 ```
 
 > On Windows PowerShell 5.1 use `powershell` instead of `pwsh`. If scripts are blocked, run once:

@@ -26,6 +26,14 @@
 #                  sends 'Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN}' - a Sentry API token
 #                  you export in the OS environment; sentry-oauth writes NO header, so Cursor runs
 #                  Sentry's OAuth sign-in on first connect. Omitted, an existing entry keeps its mode.
+#   playwright-chrome | playwright-msedge | playwright-firefox | playwright-webkit (repeatable) -> the
+#                  browsers the playwright MCP can drive, ONE server each (playwright-chrome, ...), each
+#                  with its own profile in .playwright/<engine>. chrome and msedge use the browser installed
+#                  on the machine; firefox and webkit are Playwright's own builds, downloaded by the run.
+#                  Omitted, the servers already in mcp.json are kept (a legacy 'playwright' entry counts as
+#                  its engine); chrome when there are none. A browser left out is removed.
+#   playwright-on-<engine> -> the one browser to keep switched on; the run names the others to switch off
+#                  in Customize (or `agent mcp disable <name>`). Cursor has no mcp.json field for it.
 #   skills-only -> run only the skill install/update step, then exit (testability - skips
 #                  prerequisites/mcps/hooks/rules/agents)
 #
@@ -44,7 +52,7 @@ set -euo pipefail
 ACTION="${1:-}"
 case "$ACTION" in
   install|update) ;;
-  *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]" >&2; exit 1 ;;
+  *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]" >&2; exit 1 ;;
 esac
 
 # This script provisions the Cursor agent.
@@ -57,6 +65,8 @@ SPACE=""
 INSTALL_GITHUB_CLI=false
 CONTEXT7_MODE="remote"
 SENTRY_AUTH=""        # '' = keep an existing entry's mode, token on a fresh one (resolved in set_cursor_mcps)
+PLAYWRIGHT_BROWSERS="" # '' = keep the playwright-* servers already in mcp.json, chrome when none (resolved in set_cursor_mcps)
+PLAYWRIGHT_ENABLED=""  # the one engine to keep on - only names the others to switch off
 SKILLS_ONLY=false
 for extra in "${@:2}"; do
   case "$extra" in
@@ -65,20 +75,27 @@ for extra in "${@:2}"; do
     context7-remote) CONTEXT7_MODE="remote" ;;
     sentry-token) SENTRY_AUTH="token" ;;
     sentry-oauth) SENTRY_AUTH="oauth" ;;
+    playwright-chrome|playwright-msedge|playwright-firefox|playwright-webkit) PLAYWRIGHT_BROWSERS="$PLAYWRIGHT_BROWSERS ${extra#playwright-}" ;;
+    playwright-on-chrome|playwright-on-msedge|playwright-on-firefox|playwright-on-webkit) PLAYWRIGHT_ENABLED="${extra#playwright-on-}" ;;
     skills-only) SKILLS_ONLY=true ;;
     *)
       # Any other single word is the SPACE (memory-DB namespace). Reserved flags are matched above;
       # a second bare word, or a disallowed charset, is an error.
       if [ -n "$SPACE" ]; then
-        echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
+        echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
       fi
       case "$extra" in
         [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
-          echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
+          echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
       esac
       SPACE="$extra" ;;
   esac
 done
+if [ -n "$PLAYWRIGHT_ENABLED" ] && [ -n "$PLAYWRIGHT_BROWSERS" ]; then
+  case " $PLAYWRIGHT_BROWSERS " in *" $PLAYWRIGHT_ENABLED "*) ;;
+    *) echo "usage: playwright-on-$PLAYWRIGHT_ENABLED must be one of the kept browsers (${PLAYWRIGHT_BROWSERS# })" >&2; exit 1 ;;
+  esac
+fi
 
 SCOPE="${SCOPE:-project}"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -601,16 +618,55 @@ set_cursor_mcps() {
 
   local prog; prog=$(cat <<'PY'
 import json, sys
-path, action, sentry_auth = sys.argv[1], sys.argv[2], sys.argv[3]
+path, action, sentry_auth, pw_browsers, pw_enabled = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5]
 try:
     data = json.load(open(path))
 except Exception:
     data = {}
 servers = data.setdefault("mcpServers", {})
+# playwright: a server drives ONE browser, fixed at launch (`--browser`; no runtime switch), so the
+# manifest's single `playwright` line becomes one playwright-<engine> server per kept browser, each with
+# its own profile folder. Kept = the asked browsers, else the servers already here (a legacy `playwright`
+# entry counts as its --browser engine, none = chrome), else chrome. A legacy entry and every dropped
+# browser's server are removed; which one is ON is the user's toggle in Customize.
+ENGINES = ["chrome", "msedge", "firefox", "webkit"]
+def pw_registered():
+    got = set()
+    for n, v in servers.items():
+        if n.startswith("playwright-") and n[len("playwright-"):] in ENGINES:
+            got.add(n[len("playwright-"):])
+        elif n == "playwright" and isinstance(v, dict):
+            a = v.get("args") or []
+            got.add(a[a.index("--browser") + 1] if "--browser" in a[:-1] else "chrome")
+    return got
+lines = []
 for line in sys.stdin.read().splitlines():
     if not line.strip():
         continue
     name, spec = line.split("|", 1)
+    if name != "playwright":
+        lines.append((name, spec)); continue
+    want = set(pw_browsers) or pw_registered()
+    if pw_enabled:
+        want.add(pw_enabled)
+    pw_kept = [e for e in ENGINES if e in want] or ["chrome"]
+    for gone in ["playwright"] + ["playwright-" + e for e in ENGINES if e not in pw_kept]:
+        if gone in servers:
+            del servers[gone]
+            print("  cursor mcp removed: " + gone + (" (now one server per browser engine)" if gone == "playwright" else " (browser dropped)"))
+    for e in pw_kept:
+        words, out, prev = spec.split(), [], ""
+        for w in words:
+            out.append(w + "/" + e if prev == "--user-data-dir" else w)
+            if w.startswith("@playwright/mcp"):
+                out += ["--browser", e]
+            prev = w
+        lines.append(("playwright-" + e, " ".join(out)))
+    if pw_enabled and len(pw_kept) > 1:
+        print("  cursor playwright: keep playwright-" + pw_enabled + " on - switch off "
+              + ", ".join("playwright-" + e for e in pw_kept if e != pw_enabled)
+              + " in Customize (or: agent mcp disable <name>)")
+for name, spec in lines:
     # Skip-if-present on plain install: an MCP
     # already in mcp.json keeps its baked pin (FROZEN until `update` re-resolves and re-writes it).
     # Without this a plain install would re-write the freshly-resolved latest pin and silently bump it.
@@ -674,7 +730,28 @@ json.dump(data, open(path, "w"), indent=2); open(path, "a").write("\n")
 print("  cursor mcp.json -> " + path)
 PY
 )
-  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH"
+  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED"
+  ensure_playwright_browser "$mcp_path"
+}
+
+# firefox / webkit are Playwright's own builds, not a browser the machine already has: download each one
+# a written playwright-<engine> server names through the server's OWN bundled playwright (`npx -p <that
+# server's pinned @playwright/mcp> playwright`), so the build matches the version Cursor launches. Fail-soft.
+ensure_playwright_browser() {
+  local pkg engine
+  python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1])).get("mcpServers") or {}
+for e in ("firefox", "webkit"):
+    a = (s.get("playwright-" + e) or {}).get("args") or []
+    pkg = next((x for x in a if x.startswith("@playwright/mcp")), "")
+    if pkg:
+        print(pkg, e)' "$1" 2>/dev/null | while read -r pkg engine; do
+    log "playwright: downloading the $engine build the server launches"
+    if ! command -v npx >/dev/null 2>&1 || ! npx -y -p "$pkg" playwright install "$engine" </dev/null; then
+      log "  !! could not download $engine - run by hand: npx -y -p $pkg playwright install $engine"
+    fi
+  done
 }
 
 set_cursor_hooks() {

@@ -59,6 +59,13 @@ param(
   # environment; 'oauth' writes NO header, so Cursor runs Sentry's OAuth sign-in on first connect.
   # Omitted, an existing entry keeps its mode. e.g.: .\cursor-stack.ps1 install -SentryAuth oauth
   [string]$SentryAuth = '',
+  # Optional: the playwright browsers, comma-separated - any of 'chrome', 'msedge', 'firefox', 'webkit' - ONE
+  # server each (playwright-chrome, ...), each with its own profile in .playwright/<engine>; firefox/webkit are
+  # downloaded by the run. Omitted, the playwright-* servers already in mcp.json are kept (chrome when none).
+  # -PlaywrightEnabled names the one to keep on; the run names the others to switch off in Customize.
+  # e.g.: .\cursor-stack.ps1 install -PlaywrightBrowsers chrome,firefox -PlaywrightEnabled firefox
+  [string]$PlaywrightBrowsers = '',
+  [string]$PlaywrightEnabled = '',
   # Optional: install the GitHub CLI (gh) via winget if missing; prompts for `gh auth login`
   # when unauthenticated. e.g.: .\cursor-stack.ps1 install -GitHubCli
   [switch]$GitHubCli,
@@ -77,6 +84,21 @@ if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction Sile
 $SentryAuth = $SentryAuth.ToLowerInvariant()
 if ($SentryAuth -notin @('', 'token', 'oauth')) {
   Write-Host "-SentryAuth must be 'token' or 'oauth' (got '$SentryAuth')" -ForegroundColor Red
+  exit 1
+}
+
+# -PlaywrightBrowsers / -PlaywrightEnabled: '' keeps the registered servers (chrome when none), resolved in
+# Set-CursorMcps; the list is put in ONE canonical order (chrome, msedge, firefox, webkit).
+$PwEnginesAll = @('chrome', 'msedge', 'firefox', 'webkit')
+$PwAsked = @()
+if ($PlaywrightBrowsers) {
+  $pwWant = @($PlaywrightBrowsers.ToLowerInvariant().Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  foreach ($w in $pwWant) { if ($w -notin $PwEnginesAll) { Write-Host "-PlaywrightBrowsers takes chrome, msedge, firefox, webkit (got '$w')" -ForegroundColor Red; exit 1 } }
+  $PwAsked = @($PwEnginesAll | Where-Object { $_ -in $pwWant })
+}
+$PlaywrightEnabled = $PlaywrightEnabled.ToLowerInvariant()
+if ($PlaywrightEnabled -and ($PlaywrightEnabled -notin $PwEnginesAll -or ($PwAsked.Count -and $PlaywrightEnabled -notin $PwAsked))) {
+  Write-Host "-PlaywrightEnabled must be one of the kept browsers (got '$PlaywrightEnabled')" -ForegroundColor Red
   exit 1
 }
 
@@ -689,7 +711,50 @@ function Set-CursorMcps {
   # memory MCP db lives under .cursor and the install stays entirely within the Cursor tree.
   $cfgDir = $ConfigDir
 
+  # playwright: a server drives ONE browser, fixed at launch (`--browser`; no runtime switch), so the
+  # manifest's single `playwright` entry becomes one playwright-<engine> server per kept browser, each with
+  # its own profile folder. Kept = the asked browsers, else the servers already here (a legacy `playwright`
+  # entry counts as its --browser engine, none = chrome), else chrome. A legacy entry and every dropped
+  # browser's server are removed; which one is ON is the user's toggle in Customize.
+  $entries = @()
   foreach ($entry in $Mcps) {
+    $parts = $entry.Split('|', 2)
+    if ($parts[0] -ne 'playwright') { $entries += $entry; continue }
+    $want = @($PwAsked)
+    if (-not $want.Count) {
+      foreach ($p in @($data.mcpServers.PSObject.Properties)) {
+        if ($p.Name -match '^playwright-(chrome|msedge|firefox|webkit)$') { $want += $Matches[1] }
+        elseif ($p.Name -eq 'playwright') {
+          $a = @(); if ($p.Value.PSObject.Properties['args']) { $a = @($p.Value.args) }
+          $bi = [array]::IndexOf($a, '--browser')
+          $want += if ($bi -ge 0 -and $bi -lt $a.Count - 1) { [string]$a[$bi + 1] } else { 'chrome' }
+        }
+      }
+    }
+    if ($PlaywrightEnabled) { $want += $PlaywrightEnabled }
+    $kept = @($PwEnginesAll | Where-Object { $_ -in $want })
+    if (-not $kept.Count) { $kept = @('chrome') }
+    foreach ($gone in @(@('playwright') + @($PwEnginesAll | Where-Object { $_ -notin $kept } | ForEach-Object { "playwright-$_" }))) {
+      if ($data.mcpServers.PSObject.Properties[$gone]) {
+        $data.mcpServers.PSObject.Properties.Remove($gone)
+        Log ("  cursor mcp removed: $gone" + $(if ($gone -eq 'playwright') { ' (now one server per browser engine)' } else { ' (browser dropped)' }))
+      }
+    }
+    foreach ($k in $kept) {
+      $out = @(); $prev = ''
+      foreach ($w in @($parts[1].Split(' ') | Where-Object { $_ -ne '' })) {
+        $out += $(if ($prev -eq '--user-data-dir') { "$w/$k" } else { $w })
+        if ($w -like '@playwright/mcp*') { $out += '--browser'; $out += $k }
+        $prev = $w
+      }
+      $entries += "playwright-$k|" + ($out -join ' ')
+    }
+    if ($PlaywrightEnabled -and $kept.Count -gt 1) {
+      Log ("  cursor playwright: keep playwright-$PlaywrightEnabled on - switch off " + (($kept | Where-Object { $_ -ne $PlaywrightEnabled } | ForEach-Object { "playwright-$_" }) -join ', ') + ' in Customize (or: agent mcp disable <name>)')
+    }
+  }
+
+  foreach ($entry in $entries) {
     $parts = $entry.Split('|', 2)
     $name = $parts[0]
     # Skip-if-present on plain install: an MCP already
@@ -768,6 +833,25 @@ function Set-CursorMcps {
   }
   Write-JsonFile $data $mcpPath
   Log "  cursor mcp.json -> $mcpPath"
+  Install-PlaywrightBrowser $data
+}
+
+# firefox / webkit are Playwright's own builds, not a browser the machine already has: download each one
+# a written playwright-<engine> server names through the server's OWN bundled playwright (`npx -p <that
+# server's pinned @playwright/mcp> playwright`), so the build matches the version Cursor launches. Fail-soft.
+function Install-PlaywrightBrowser($Data) {
+  foreach ($engine in @('firefox', 'webkit')) {
+    $pw = $Data.mcpServers.PSObject.Properties["playwright-$engine"]
+    if (-not $pw -or -not $pw.Value.PSObject.Properties['args']) { continue }
+    $pkg = @($pw.Value.args) | Where-Object { ([string]$_).StartsWith('@playwright/mcp') } | Select-Object -First 1
+    if (-not $pkg) { continue }
+    Log "playwright: downloading the $engine build the server launches"
+    $ok = $false
+    if (Get-Command npx -ErrorAction SilentlyContinue) {
+      try { & npx -y -p $pkg playwright install $engine; $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false }
+    }
+    if (-not $ok) { Log "  !! could not download $engine - run by hand: npx -y -p $pkg playwright install $engine" }
+  }
 }
 
 function Set-CursorHooks {

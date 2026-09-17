@@ -95,11 +95,14 @@ function main() {
   const event = input.hook_event_name;
   if (!event) return;
   const root = (Array.isArray(input.workspace_roots) && input.workspace_roots[0]) || input.cwd || process.cwd();
-  // Bridge into the byte-identical engine: docs.js reads Claude's env names (CLAUDE_PROJECT_DIR,
-  // CLAUDE_STACK_DOCS_PATH) unconditionally - see the Task 12 report for why the engine file itself
-  // stays unchanged rather than following this repo's own CURSOR_ names.
+  // Bridge the resolved project root into the engine: docs.js reads CLAUDE_PROJECT_DIR unconditionally
+  // and has no Cursor-named equivalent for it, because a hook process's own cwd is not reliably the
+  // project root the way a model-run shell command's is. The docs ROOT PATH needs no such bridge: this
+  // Cursor copy of docs.js (second permitted difference from the byte-identical engine, alongside the
+  // conflictView hint text - see the Task 12 report's engine-parity section) reads CURSOR_DOCS_PATH
+  // itself, so it resolves the same docs folder whether it is required here or run directly by the
+  // model from its own shell, which never goes through this process's env at all.
   process.env.CLAUDE_PROJECT_DIR = root;
-  process.env.CLAUDE_STACK_DOCS_PATH = docsRootEnv();
   const docs = require('./docs.js');
   if (!fs.existsSync(docs.DOCS)) { if (event === 'preToolUse') allow(); return; }
   const state = loadState(sessionKey(input));

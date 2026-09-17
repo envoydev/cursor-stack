@@ -589,3 +589,20 @@ test('lint: a watch entry missing sections and a newModule missing globs are bot
     assert.doesNotMatch(clean.stdout, /is missing/);
   } finally { r.rm(); }
 });
+
+test('the engine finds the Cursor docs root from a plain shell with no Claude env var set', () => {
+  // Regression for the fix-round-2 bug: docs-session.js's own bridge only reached its own process, but
+  // the orientation block, the pointer rule and the skill prose all tell the model to run
+  // `node .cursor/hooks/docs.js ...` itself, in a fresh shell that never goes through that bridge. Spawn
+  // docs.js directly (not through r.cli(), which always injects CLAUDE_STACK_DOCS_PATH and would mask
+  // exactly this) against docs seeded under Cursor's own default docs path, with every Claude/Cursor env
+  // var stripped - the way a model's own shell command actually runs.
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'class Refund {}\n' }, docs: { 'references/patterns.md': PATTERNS }, docsPath: '.cursor/docs' });
+  try {
+    const env = { ...process.env };
+    for (const k of ['CLAUDE_PROJECT_DIR', 'CLAUDE_STACK_DOCS_PATH', 'CLAUDE_DOCS_PATH', 'CURSOR_DOCS_PATH']) delete env[k];
+    const out = spawnSync(process.execPath, [path.join(require('./docs-fixture').HOOKS, 'docs.js'), 'where', 'src/Api/Orders/Refund.cs'], { cwd: r.root, encoding: 'utf8', env });
+    assert.strictEqual(out.status, 0, out.stderr);
+    assert.match(out.stdout, /^patterns#orders /);
+  } finally { r.rm(); }
+});

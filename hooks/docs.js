@@ -24,7 +24,7 @@ const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const docsRootEnv = () => process.env.CLAUDE_STACK_DOCS_PATH || process.env.CLAUDE_DOCS_PATH || '.claude/docs';
+const docsRootEnv = () => process.env.CURSOR_DOCS_PATH || process.env.CLAUDE_STACK_DOCS_PATH || process.env.CLAUDE_DOCS_PATH || '.cursor/docs';
 const DOCS_ROOT = path.resolve(ROOT, docsRootEnv());
 const DOCS = path.join(DOCS_ROOT, 'architecture');
 const BLOCK_FILE = path.join(DOCS, 'ORIENTATION.md');

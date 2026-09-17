@@ -33,7 +33,11 @@
 //      or a reader (skills/agents/rules/hooks/README/HTML/template/installers)
 //      - a fix ported from the sibling repo must not drag its framing back;
 //      the ${CLAUDE_PROJECT_DIR}/${CLAUDE_CONFIG_DIR} path tokens and the
-//      CLAUDE.md filename are the allowed exceptions;
+//      CLAUDE.md filename are the allowed exceptions, and hooks/docs.js +
+//      hooks/docs-session.js are whole-file exempt (the shared, deliberately
+//      byte-identical docs engine and its companion hook, which bridges into
+//      the engine's own env names and log path on purpose - see the docs
+//      hook's own header);
 //   9. no false 'Vendored from' label on a dotnet-* HTML line (house
 //      dotnet-* skills are original work).
 // No dependencies. Run: node scripts/lint-stack.js
@@ -451,7 +455,10 @@ function main()
         const sh = new Set(parseStringArray(CURSOR_SH, '"', shBlock));
         const ps1 = new Set(parseStringArray(CURSOR_PS1, "'", ps1Block));
         assertSameSet(what, { 'cursor-stack.sh': sh, 'cursor-stack.ps1': ps1 });
-        assertSameSet(`${what} file`, { [diskLabel]: diskSet(dir, ext), [`cursor-stack.sh ${shBlock.replace(/[=(]+$/, '')}`]: sh });
+        // docs.js is the docs-session hook's engine, copied beside it but never itself wired to an
+        // event - it exists on disk without a CURSOR_HOOKS entry, on purpose.
+        const disk = what === 'hook' ? new Set([...diskSet(dir, ext)].filter((f) => f !== 'docs.js')) : diskSet(dir, ext);
+        assertSameSet(`${what} file`, { [diskLabel]: disk, [`cursor-stack.sh ${shBlock.replace(/[=(]+$/, '')}`]: sh });
         arrayCounts[what] = sh.size;
     }
 
@@ -697,6 +704,15 @@ function main()
     //     the template tells an agent to read). This file and the repo's own
     //     CLAUDE.md are not scanned: one is the enforcement, the other is the
     //     documented exception.
+    //     A third, whole-file exception: hooks/docs.js and hooks/docs-session.js.
+    //     docs.js is DELIBERATELY byte-identical to the peer stack's copy (one
+    //     source, diffable both ways), so it reads that stack's env names
+    //     (CLAUDE_PROJECT_DIR, CLAUDE_STACK_DOCS_PATH) and writes its
+    //     .claude/docs-log.jsonl ledger on purpose - a real mechanism, not
+    //     framing that leaked in. docs-session.js bridges into that engine
+    //     (sets those same env vars before requiring it) and writes the same
+    //     ledger path so one reader can tally both surfaces - see its own
+    //     header comment for the full account.
     const framingFiles = [README, STACK_HTML, TEMPLATE];
     // Every shell script in scripts/ - discovered, not named, so a script added later is
     // covered without anyone remembering to list it here. This deliberately picks up the two
@@ -708,9 +724,14 @@ function main()
         for (const f of diskSet(SCRIPTS_DIR, ext)) framingFiles.push(path.join(SCRIPTS_DIR, f));
     }
 
+    const DOCS_ENGINE_EXEMPT = new Set(['docs.js', 'docs-session.js']);
     for (const [dir, ext] of [[AGENTS_DIR, '.md'], [RULES_DIR, '.mdc'], [HOOKS_DIR, '.js']])
     {
-        for (const f of diskSet(dir, ext)) framingFiles.push(path.join(dir, f));
+        for (const f of diskSet(dir, ext))
+        {
+            if (dir === HOOKS_DIR && DOCS_ENGINE_EXEMPT.has(f)) continue;
+            framingFiles.push(path.join(dir, f));
+        }
     }
 
     const skillFiles = [];

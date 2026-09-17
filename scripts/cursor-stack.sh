@@ -344,6 +344,16 @@ MCPS=(
 #   - guard-unapproved-dispatch  -> subagentStart (an implementer fan-out needs the recorded approval).
 #   - guard-secret-value         -> preToolUse + beforeShellExecution + beforeReadFile (a credential is read for
 #                                   presence, never its value: a dump is redacted or denied, judged by content).
+#   - docs-session               -> sessionStart + preToolUse + stop (the architecture docs' start block, the
+#                                   first source change held until a covering section was read, and the
+#                                   watch-list nudge at session end via stop's followup_message - Cursor's stop
+#                                   cannot block, so this is a nudge, not a gate). Wired UNSCOPED on preToolUse,
+#                                   like guard-secret-value - the tool_name check is inside the hook. Ships its
+#                                   engine, docs.js, beside it (copied, never itself wired to an event). NOT
+#                                   SHIPPED: the subagentStart orientation - Cursor's subagentStart can only
+#                                   answer allow/deny, with no channel to inject context, so a dispatched
+#                                   subagent reads the generated baseline-project-architecture.mdc pointer rule
+#                                   instead of the docs hook's push.
 # Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot block
 # and never sees the response text, and there is no question tool to gate) and usage instrumentation
 # (its analyzer reads a transcript format Cursor does not produce).
@@ -359,6 +369,9 @@ CURSOR_HOOKS=(
   "guard-secret-value.js::preToolUse"
   "guard-secret-value.js::beforeShellExecution"
   "guard-secret-value.js::beforeReadFile"
+  "docs-session.js::sessionStart"
+  "docs-session.js::preToolUse"
+  "docs-session.js::stop"
 )
 # A rule entry is "name" (copied from the source clone's rules/) or "name|url" (fetched from that
 # url - the form for a third-party rule we would reference rather than vendor; currently unused,
@@ -788,6 +801,20 @@ set_cursor_hooks() {
     cmd="\"$node_exe\" \"$ref_prefix$file\""
     pairs+=("$event|$cmd")
   done
+
+  # docs-session.js requires('./docs.js') from its own directory - the engine is copied beside it,
+  # never itself wired to an event (same content-compare-then-skip as the loop above).
+  case " ${CURSOR_HOOKS[*]} " in
+    *" docs-session.js::"*)
+      src="$SOURCE_DIR/hooks/docs.js"
+      if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then
+        if [ -f "$hooks_dir/docs.js" ] && cmp -s "$src" "$hooks_dir/docs.js"; then log "  cursor hook current: docs.js"
+        else cp "$src" "$hooks_dir/docs.js"; chmod +x "$hooks_dir/docs.js"; log "  cursor hook copied -> docs.js"; fi
+      else
+        [ -f "$hooks_dir/docs.js" ] || log "  !! not in source and no local copy: docs.js - skipping"
+      fi
+      ;;
+  esac
 
   local prog; prog=$(cat <<'PY'
 import json, sys

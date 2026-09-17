@@ -390,6 +390,18 @@ $Mcps = @(
 #       - guard-read-whole-file      -> beforeReadFile + beforeShellExecution (a whole-file read of a large
 #                                       source file, by tool or by shell cat, goes through serena first).
 #       - guard-unapproved-dispatch  -> subagentStart (an implementer fan-out needs the recorded approval).
+#       - guard-secret-value         -> preToolUse + beforeShellExecution + beforeReadFile (a credential is
+#                                       read for presence, never its value: a dump is redacted or denied).
+#       - docs-session               -> sessionStart + preToolUse + stop (the architecture docs' start block,
+#                                       the first source change held until a covering section was read, and
+#                                       the watch-list nudge at session end via stop's followup_message -
+#                                       Cursor's stop cannot block, so this is a nudge, not a gate). Wired
+#                                       UNSCOPED on preToolUse, like guard-secret-value - the tool_name check
+#                                       is inside the hook. Ships its engine, docs.js, beside it (copied,
+#                                       never itself wired to an event). NOT SHIPPED: the subagentStart
+#                                       orientation - Cursor's subagentStart can only answer allow/deny, with
+#                                       no channel to inject context, so a dispatched subagent reads the
+#                                       generated baseline-project-architecture.mdc pointer rule instead.
 #     Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot
 #     block and never sees the response text) and usage instrumentation (its analyzer reads a
 #     transcript format Cursor does not produce).
@@ -405,6 +417,9 @@ $CursorHooks = @(
   'guard-secret-value.js::preToolUse'
   'guard-secret-value.js::beforeShellExecution'
   'guard-secret-value.js::beforeReadFile'
+  'docs-session.js::sessionStart'
+  'docs-session.js::preToolUse'
+  'docs-session.js::stop'
 )
 # A rule entry is 'name' (fetched from $CursorRulesBaseUrl) or 'name|url' (fetched from that url -
 # the form for a third-party rule we would reference rather than vendor; currently unused).
@@ -911,6 +926,23 @@ function Set-CursorHooks {
     $data.hooks.$event = $arr
     $changed = $true
   }
+
+  # docs-session.js requires('./docs.js') from its own directory - the engine is copied beside it,
+  # never itself wired to an event (same hash-compare-then-skip as the loop above).
+  if ($CursorHooks -match '^docs-session\.js::') {
+    $docsDest = Join-Path $hooksDir 'docs.js'
+    $docsSrc = if ($script:SourceDir) { Join-Path $script:SourceDir 'hooks\docs.js' } else { $null }
+    if (-not ($docsSrc -and (Test-Path -LiteralPath $docsSrc))) {
+      if (-not (Test-Path -LiteralPath $docsDest)) { Log '  !! not in source and no local copy: docs.js - skipping' }
+    }
+    elseif ((Test-Path -LiteralPath $docsDest) -and ((Get-FileHash -LiteralPath $docsSrc).Hash -eq (Get-FileHash -LiteralPath $docsDest).Hash)) {
+      Log '  cursor hook current: docs.js'
+    }
+    else {
+      Copy-Item -LiteralPath $docsSrc -Destination $docsDest -Force; Log '  cursor hook copied -> docs.js'
+    }
+  }
+
   if ($changed) {
     Write-JsonFile $data $hooksJson
     Log "  cursor hooks.json -> $hooksJson"

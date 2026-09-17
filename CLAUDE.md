@@ -37,17 +37,29 @@ Invariants).
   devops) + `markdown-docs.mdc` (a trigger patch: the doc skills' keywords miss a plain `.md`
   content edit) + the two repair routers (`dotnet-` / `angular-repair-agents.mdc`: a red build or
   suite goes to a resolver seat).
-- `hooks/` - six guards in Cursor's hook contract, wired via `.cursor/hooks.json`: three on
+- `hooks/` - seven hooks in Cursor's hook contract, wired via `.cursor/hooks.json`: six guards (three on
   `beforeShellExecution` (`guard-protected-force-push.js`, `guard-catastrophic-rm.js`,
   `guard-ungated-commit.js`), `guard-read-whole-file.js` on both `beforeReadFile` and
-  `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`, and `guard-secret-value.js` on `preToolUse` + `beforeShellExecution` + `beforeReadFile` (a credential dump is rewritten to its redacted form where `preToolUse` accepts `updated_input`, denied elsewhere). Each answers
+  `beforeShellExecution`, and `guard-unapproved-dispatch.js` on `subagentStart`, and `guard-secret-value.js` on `preToolUse` + `beforeShellExecution` + `beforeReadFile` (a credential dump is rewritten to its redacted form where `preToolUse` accepts `updated_input`, denied elsewhere)) plus `docs-session.js`. Each guard answers
   an allow/deny permission on stdout, and appends one JSONL row per BLOCK under `<docs-path>/hook-blocks/` - a block costs its denial plus the retried turn, so the block RATE is the number that says a gate earns its keep. `guard-ungated-commit` gates PUBLISHING too (`<docs-path>/flow/PUSH-GATE`, same five-line receipt; `CURSOR_PUSH_GATE=0` turns that half off where the remote is already gated); its two receipt checks that read the session TRANSCRIPT fail open here by construction - a Cursor transcript carries neither shape - which the hook header states rather than leaving to a reader to assume. Two peer guards have no Cursor home and are deliberately
   absent: a stop-contract gate (the `stop` hook cannot block and never receives the response
   text, and there is no question tool to gate) and usage instrumentation (its analyzer reads a
-  transcript format Cursor does not produce).
-- `scripts/guard-hooks.test.js` - behavior tests for the six guards (`npm test` runs the lint then
-  these), driving each hook the way Cursor does: payload JSON on stdin, permission read off stdout.
-  They exist because the guards are PORTED, and a port is exactly where a gate quietly stops gating -
+  transcript format Cursor does not produce). `docs-session.js` (`sessionStart` + `preToolUse`, wired
+  unscoped like `guard-secret-value.js` since this installer's `hooks.json` generator carries no
+  per-entry matcher + `stop`) makes the architecture docs the start of a session and keeps them honest
+  at its end: folds a merged branch's doc versions into mainline and pushes orientation, this branch's
+  overrides and conflicts on `sessionStart`; holds the first source change under a watched root until
+  its covering section was read on `preToolUse`; nudges a rewrite of a section a watched change hit,
+  once, on `stop` (Cursor's `stop` cannot block, so this is a nudge, not a hard gate).
+  `CURSOR_DOCS_BLOCK` / `CURSOR_DOCS_GATE` / `CURSOR_DOCS_ASK` turn its three parts off. It shares its
+  engine, `docs.js`, byte-identical with claude-stack's copy - `docs.js` answers no hook event itself, so
+  it carries no `hooks.json` entry despite living on disk beside the hook that requires it.
+- `scripts/guard-hooks.test.js` - behavior tests for the six guards, and `scripts/docs-session.test.js`
+  for the seventh (`docs-session.js`'s `writeTargets` / `consultedBy` / `toolPaths`, ported from
+  claude-stack's own suite the same way `scripts/docs-engine.test.js` ports the byte-identical engine's);
+  `npm test` runs the lint then every `*.test.js` node discovers. Each drives its hook the way Cursor
+  does: payload JSON on stdin, permission / context / followup read off stdout.
+  They exist because these hooks are PORTED, and a port is exactly where a gate quietly stops gating -
   one of them pins a bug the port itself surfaced, where an absolute in-repo docs root made every
   conformant receipt fail its own file count.
 - `scripts/lint-stack.js` - the repo lint (`npm run lint`, beside the installer twins), dependency-free

@@ -1,0 +1,256 @@
+// scripts/docs-session.test.js - the docs session hook, driven through stdin payloads in throwaway git repos.
+// Ported from claude-stack's scripts/docs-session.test.js for Cursor's hook contract: event names lowercased
+// (sessionStart/preToolUse/stop), output read as { additional_context } / { permission, agent_message } /
+// { followup_message } instead of Claude's hookSpecificOutput/permissionDecision/decision+reason shapes, the
+// session id carried as conversation_id outside sessionStart (session_id there - see docs-session.js's
+// sessionKey), tool names mapped to Cursor's (Edit -> Write, Bash -> Shell), and CLAUDE_STACK_DOCS_* ->
+// CURSOR_DOCS_*. Two source tests are dropped, each noted where it would have gone:
+//   - 'subagent start gets the orientation without branch lines or promotion' - Cursor's subagentStart can
+//     only answer { permission, user_message }; it has no channel to inject context, so docs-session.js does
+//     not handle that event at all (see its NOT SHIPPED header note). There is nothing on Cursor's surface
+//     for this test to drive.
+//   - the stop_hook_active sub-case inside 'no hit, stop_hook_active, the ask switched off, or no watch.json:
+//     silent' - Cursor's stop payload carries no equivalent flag (nothing tells the hook a stop already
+//     fired once for this turn), so docs-session.js's stop() has no branch for it. The test's other three
+//     sub-cases (routine change, CURSOR_DOCS_ASK=0, no watch.json) port unchanged in spirit below.
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const { repo, section } = require('./docs-fixture');
+
+let n = 0;
+const sid = () => `docs-test-${process.pid}-${++n}`;
+const ctx = (out) => { try { return JSON.parse(out.stdout).additional_context; } catch { return ''; } };
+const PATTERNS = section('orders', 'src/Api/Orders/**', 'Refunds are ledgered before the payment call.') + '\n' + section('users', 'src/Api/Users/**', 'Users are soft-deleted.');
+const ORIENT = 'Api -> Infrastructure -> Domain. Orders own refunds.\n';
+
+test('session start pushes the orientation block and how to read by section', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'class Refund {}\n' }, docs: { 'references/patterns.md': PATTERNS, 'ORIENTATION.md': ORIENT } });
+  try {
+    const out = r.hook({ hook_event_name: 'sessionStart', session_id: sid() });
+    const text = ctx(out);
+    assert.match(text, /Orders own refunds/);
+    assert.match(text, /node \.cursor\/hooks\/docs\.js where <path>/);
+    assert.match(text, /node \.cursor\/hooks\/docs\.js show <file>#<id>/);
+    assert.match(text, /Before your first change under src\/ or tests\//);
+    assert.strictEqual(r.hook({ hook_event_name: 'sessionStart', session_id: sid() }, { CURSOR_DOCS_BLOCK: '0' }).stdout, '');
+  } finally { r.rm(); }
+});
+
+test('on a feature branch the start block names its overrides and conflicts', () => {
+  const r = repo({ docs: { 'references/patterns.md': section('orders', 'src/Api/Orders/**', 'The cap is 5.'), 'ORIENTATION.md': ORIENT } });
+  try {
+    r.git('switch', '-qc', 'feat/cap');
+    r.cli(['set', 'patterns#orders'], '## orders\n<!-- id: orders -->\nThe cap is 10.\n');
+    r.git('switch', '-q', 'develop');
+    r.cli(['set', 'patterns#orders'], '## orders\n<!-- id: orders -->\nThe cap is 20.\n');
+    r.git('switch', '-q', 'feat/cap');
+    const text = ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() }));
+    assert.match(text, /You are on branch feat\/cap\. 1 doc section\(s\) hold this branch's own decisions and replace mainline's in every read: patterns#orders/);
+    assert.match(text, /Conflicts: patterns#orders/);
+  } finally { r.rm(); }
+});
+
+test('on mainline the start hook promotes a merged branch and says so', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'class Refund {}\n' }, docs: { 'references/patterns.md': PATTERNS, 'ORIENTATION.md': ORIENT } });
+  try {
+    r.git('switch', '-qc', 'feat/cap');
+    r.write('src/Api/Orders/Refund.cs', 'class Refund { int Cap; }\n'); r.git('commit', '-qam', 'cap');
+    r.cli(['set', 'patterns#orders'], '## orders\n<!-- id: orders -->\n<!-- covers: src/Api/Orders/** -->\nRefunds are capped at 10.\n');
+    r.git('switch', '-q', 'develop');
+    r.git('merge', '-q', '--no-ff', '-m', 'merge', 'feat/cap');
+    const text = ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() }));
+    assert.match(text, /Branch feat\/cap was merged: 1 doc section\(s\) folded into mainline/);
+    assert.match(r.read('.claude/docs/architecture/references/patterns.md'), /capped at 10/);
+    assert.match(r.read('.claude/docs-log.jsonl'), /"event":"promote"/);
+  } finally { r.rm(); }
+});
+
+test('the start block names conflict markers and duplicate ids, and a detached HEAD', () => {
+  const r = repo({ tracked: true, docs: { 'references/patterns.md': `${PATTERNS}\n<<<<<<< HEAD\nA.\n=======\nB.\n>>>>>>> feat\n`, 'ORIENTATION.md': ORIENT } });
+  try {
+    assert.match(ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() })), /The docs need a repair before they are trusted: merge conflict markers in references\/patterns/);
+    r.git('checkout', '-q', '--detach');
+    assert.match(ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() })), /Detached HEAD: the docs are read-only/);
+  } finally { r.rm(); }
+});
+
+// Source test 'subagent start gets the orientation without branch lines or promotion' dropped here - Cursor's
+// subagentStart cannot carry additional_context (only { permission, user_message }), so docs-session.js does
+// not wire that event at all. See the module header note and docs-session.js's own NOT SHIPPED comment.
+
+test('no docs folder, garbage stdin, unknown event: silent and exit 0', () => {
+  const r = repo({});
+  try {
+    const a = r.hook({ hook_event_name: 'sessionStart', session_id: sid() });
+    assert.strictEqual(a.status, 0); assert.strictEqual(a.stdout, '');
+    const b = require('node:child_process').spawnSync(process.execPath, [require('./docs-fixture').HOOKS + '/docs-session.js'], { cwd: r.root, input: 'not json', encoding: 'utf8' });
+    assert.strictEqual(b.status, 0); assert.strictEqual(b.stdout, '');
+    assert.strictEqual(r.hook({ hook_event_name: 'beforeSubmitPrompt', session_id: sid() }).stdout, '');
+  } finally { r.rm(); }
+});
+
+const pre = (tool, input, conversationId) => ({ hook_event_name: 'preToolUse', conversation_id: conversationId, tool_name: tool, tool_input: input });
+const denied = (out) => /"permission":"deny"/.test(out.stdout);
+
+test('the first source change is held and handed the covering section; a show unlocks it', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'class Refund {}\n' }, docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    const s = sid();
+    const held = r.hook(pre('Write', { file_path: 'src/Api/Orders/Refund.cs' }, s));
+    assert.ok(denied(held));
+    assert.match(held.stdout, /patterns#orders covers src\/Api\/Orders\/Refund\.cs - here it is/);
+    assert.match(held.stdout, /ledgered before the payment call/);
+    assert.match(r.read('.claude/docs/hook-blocks/' + s + '.jsonl'), /"hook":"docs-session\.js"/);
+    assert.ok(!denied(r.hook(pre('Write', { file_path: 'src/Api/Orders/Refund.cs' }, s))), 'the handed-over section counts as read');
+    const s2 = sid();
+    r.hook(pre('Shell', { command: 'node .cursor/hooks/docs.js show patterns#orders 2>&1' }, s2));
+    assert.ok(!denied(r.hook(pre('Write', { file_path: 'src/Api/Orders/Refund.cs' }, s2))));
+  } finally { r.rm(); }
+});
+
+test('where, toc and status do not unlock; a Read of a doc file does', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'x\n' }, docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    const s = sid();
+    r.hook(pre('Shell', { command: 'node .cursor/hooks/docs.js where src/Api/Orders' }, s));
+    r.hook(pre('Shell', { command: 'node .cursor/hooks/docs.js toc patterns' }, s));
+    assert.ok(denied(r.hook(pre('Write', { file_path: 'src/Api/Orders/New.cs', content: 'x' }, s))));
+    const s2 = sid();
+    r.hook(pre('Read', { file_path: `${r.root}/.claude/docs/architecture/references/patterns.md` }, s2));
+    assert.ok(!denied(r.hook(pre('Write', { file_path: 'src/Api/Orders/New.cs', content: 'x' }, s2))));
+  } finally { r.rm(); }
+});
+
+test('no covering section: two holds pointing at the doc list, then the change goes through and a bypass is logged', () => {
+  const r = repo({ files: { 'tests/Zeta/Quux.cs': 'x\n' }, docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    const s = sid();
+    const edit = pre('Write', { file_path: 'tests/Zeta/Quux.cs' }, s);
+    assert.match(r.hook(edit).stdout, /see what is documented: node \.cursor\/hooks\/docs\.js files/);
+    assert.ok(denied(r.hook(edit)));
+    assert.ok(!denied(r.hook(edit)));
+    assert.match(r.read('.claude/docs-log.jsonl'), /"event":"bypass"/);
+  } finally { r.rm(); }
+});
+
+test('shell reads are never held; shell writes are', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'x\n' }, docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    const s = sid();
+    assert.ok(!denied(r.hook(pre('Shell', { command: 'grep -n Refund src/Api/Orders/Refund.cs 2>/dev/null' }, s))));
+    assert.ok(!denied(r.hook(pre('Shell', { command: 'dotnet test tests/Api > run.log 2>&1' }, s))));
+    assert.ok(denied(r.hook(pre('Shell', { command: "cat > src/Api/Orders/Refund.cs <<'EOF'\nclass Refund {}\nEOF" }, s))));
+  } finally { r.rm(); }
+});
+
+test('source roots come from watch.json; CURSOR_DOCS_GATE=0 turns the gate off', () => {
+  const r = repo({ files: { 'app/Orders/Refund.cs': 'x\n', 'src/Other.cs': 'x\n' }, docs: { 'references/patterns.md': section('orders', 'app/Orders/**', 'App rule.'), 'watch.json': JSON.stringify({ sourceRoots: ['app'] }) } });
+  try {
+    assert.ok(denied(r.hook(pre('Write', { file_path: 'app/Orders/Refund.cs' }, sid()))));
+    assert.ok(!denied(r.hook(pre('Write', { file_path: 'src/Other.cs' }, sid()))));
+    assert.ok(!denied(r.hook(pre('Write', { file_path: 'app/Orders/Refund.cs' }, sid()), { CURSOR_DOCS_GATE: '0' })));
+  } finally { r.rm(); }
+});
+
+test('writeTargets: the paths a shell command writes, from real runs', () => {
+  const { writeTargets } = require('../hooks/docs-session.js');
+  const U = '<unknown source write>';
+  const cases = [
+    // reads that mention source paths - the live-run false positives
+    ['grep -n "CancelDeletionRequest" -A 15 src/Shop.Api/Features/Auth/CancelDeletion/*.cs 2>/dev/null; echo "---"; find src/Shop.Api/Features/Auth -iname "*CancelDeletion*"', []],
+    ['grep -rn "AddValidatorsFromAssembly\\|AbstractValidator" --include="*.cs" src/Shop.Api/Program.cs src/Shop.Api/Common 2>/dev/null | grep -v Features', []],
+    ['nohup dotnet test tests/Shop.IntegrationTests > shop-integration-full.log 2>&1 &', ['shop-integration-full.log']],
+    ['dotnet build Shop.slnx 2>&1 | tail -20', []],
+    ['cat src/Api/Orders/OrderRefunds.cs', []],
+    ['grep -n "x => x.Id > 0" src/Api/Orders/OrderRefunds.cs', []],
+    ['ls src/Api > /dev/null 2>&1', []],
+    ['find src -name "*.cs" 2>/dev/null | xargs grep -l Refund', []],
+    ['git diff src/Api/Orders/OrderRefunds.cs', []],
+    ['git checkout feat/x', []],
+    // writes
+    ['echo x > src/Api/Orders/OrderRefunds.cs', ['src/Api/Orders/OrderRefunds.cs']],
+    ['echo x >> src/Api/Orders/OrderRefunds.cs', ['src/Api/Orders/OrderRefunds.cs']],
+    ["cat > src/Api/Orders/New.cs <<'EOF'\nclass New { bool A(int x) => x > 0; }\nEOF", ['src/Api/Orders/New.cs']],
+    ['cat > "src/Api/Orders/Quoted.cs" <<EOF\nx\nEOF', ['src/Api/Orders/Quoted.cs']],
+    ["sed -i '' 's/a/b/' src/Api/Orders/OrderRefunds.cs", ['src/Api/Orders/OrderRefunds.cs']],
+    ['sed -i.bak -e "s/a/b/" src/A.cs src/B.cs', ['src/A.cs', 'src/B.cs']],
+    ['sed -n 1,20p src/Api/Orders/OrderRefunds.cs', []],
+    ['perl -pi -e "s/a/b/" tests/X.cs', ['tests/X.cs']],
+    ['cp /tmp/x.cs src/Api/Orders/Copy.cs', ['src/Api/Orders/Copy.cs']],
+    ['cp src/Api/Orders/OrderRefunds.cs /tmp/backup.cs', ['/tmp/backup.cs']],
+    ['mv src/a.cs src/b.cs', ['src/b.cs']],
+    ['rm -f src/Api/Orders/OrderQueries.cs tests/Old.cs', ['src/Api/Orders/OrderQueries.cs', 'tests/Old.cs']],
+    ['mkdir -p src/Api/Refunds', ['src/Api/Refunds']],
+    ['echo x | tee src/T.cs', ['src/T.cs']],
+    ['dotnet ef migrations add AddRefunds --project src/Shop.Infrastructure', ['src/Shop.Infrastructure']],
+    ['dotnet ef migrations add AddRefunds', [U]],
+    ['dotnet ef database update', []],
+    ['dotnet new classlib -o src/Shop.New', ['src/Shop.New']],
+    ['git apply fix.patch', [U]],
+    ['git checkout -- src/Api/Orders/OrderRefunds.cs', ['src/Api/Orders/OrderRefunds.cs']],
+    ['git restore src/A.cs', ['src/A.cs']],
+    ['cd src && echo x > A.cs', ['A.cs']],
+  ];
+  for (const [command, want] of cases) assert.deepStrictEqual(writeTargets(command).sort(), [...want].sort(), command);
+});
+
+const WATCH = (extra = {}) => JSON.stringify({ watch: [{ kind: 'composition root', globs: ['src/*/Program.cs'], sections: ['patterns#orders'] }], ...extra });
+const start = (r, s) => r.hook({ hook_event_name: 'sessionStart', session_id: s });
+const stopEv = (s) => ({ hook_event_name: 'stop', conversation_id: s });
+
+test('a change to a watched file asks once, naming the section; a second stop is silent', () => {
+  const r = repo({ files: { 'src/Api/Program.cs': 'app.Run();\n' }, docs: { 'references/patterns.md': PATTERNS, 'watch.json': WATCH() } });
+  try {
+    const s = sid();
+    start(r, s);
+    r.write('src/Api/Program.cs', 'app.UseAuth();\napp.Run();\n');
+    const out = r.hook(stopEv(s));
+    const body = JSON.parse(out.stdout);
+    assert.match(body.followup_message, /You changed src\/Api\/Program\.cs \(composition root\), which this section owns: patterns#orders/);
+    assert.match(body.followup_message, /docs still hold: patterns#orders/);
+    assert.strictEqual(r.hook(stopEv(s)).stdout, '');
+  } finally { r.rm(); }
+});
+
+test('no hit, the ask switched off, or no watch.json: silent', () => {
+  const r = repo({ files: { 'src/Api/Program.cs': 'x\n', 'src/Api/Orders/Refund.cs': 'x\n' }, docs: { 'references/patterns.md': PATTERNS, 'watch.json': WATCH() } });
+  try {
+    const a = sid(); start(r, a);
+    r.write('src/Api/Orders/Refund.cs', 'y\n');
+    assert.strictEqual(r.hook(stopEv(a)).stdout, '', 'routine change');
+    const b = sid(); start(r, b);
+    r.write('src/Api/Program.cs', 'y\n');
+    assert.strictEqual(r.hook(stopEv(b), { CURSOR_DOCS_ASK: '0' }).stdout, '', 'switched off');
+    fs.rmSync(`${r.root}/.claude/docs/architecture/watch.json`);
+    const c = sid(); start(r, c);
+    r.write('src/Api/Program.cs', 'z\n');
+    assert.strictEqual(r.hook(stopEv(c)).stdout, '', 'no watch.json');
+  } finally { r.rm(); }
+});
+
+test('four owning sections: the ask names three', () => {
+  const secs = ['a', 'b', 'c', 'd'].map((x) => section(x, '', `${x}.`)).join('\n');
+  const r = repo({ files: { 'src/Api/Program.cs': 'x\n' }, docs: { 'references/p.md': secs, 'watch.json': JSON.stringify({ watch: [{ kind: 'root', globs: ['src/*/Program.cs'], sections: ['p#a', 'p#b', 'p#c', 'p#d'] }] }) } });
+  try {
+    const s = sid(); start(r, s);
+    r.write('src/Api/Program.cs', 'y\n');
+    const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
+    assert.match(followup, /these sections own: p#a, p#b, p#c\./);
+    assert.doesNotMatch(followup, /p#d/);
+  } finally { r.rm(); }
+});
+
+test('a new module folder hits newModule; a committed script change counts', () => {
+  const r = repo({ files: { 'src/Api/Features/Orders/A.cs': 'x\n', 'src/Api/Program.cs': 'x\n' }, docs: { 'references/patterns.md': PATTERNS, 'watch.json': WATCH({ newModule: { globs: ['src/*/Features/*/'], sections: ['patterns#users'] } }) } });
+  try {
+    const s = sid(); start(r, s);
+    r.write('src/Api/Features/Billing/Invoice.cs', 'class Invoice {}\n');
+    assert.match(JSON.parse(r.hook(stopEv(s)).stdout).followup_message, /new module[\s\S]*patterns#users/);
+    const t = sid(); start(r, t);
+    r.write('src/Api/Program.cs', 'changed by a script\n');
+    r.git('commit', '-qam', 'script');
+    assert.match(JSON.parse(r.hook(stopEv(t)).stdout).followup_message, /patterns#orders/);
+  } finally { r.rm(); }
+});

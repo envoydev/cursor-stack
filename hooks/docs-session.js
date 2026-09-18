@@ -6,10 +6,10 @@
 //                   overrides and conflicts, and how to read by section; snapshots the tree for the end check.
 //                   Output: { additional_context }.
 //   preToolUse   -> records reads of the docs; holds the FIRST change under a source root until a section was
-//                   read, handing the covering section over inline - a decision this session's fold just
-//                   brought in first. Wired UNSCOPED (this installer's hooks.json generator has no
-//                   per-entry matcher, the same way guard-secret-value.js is wired) - the tool_name check
-//                   below does the filtering. Output: { permission, agent_message }.
+//                   read, handing the covering section over inline - what a merge just folded into mainline
+//                   comes first. Wired UNSCOPED (this installer's hooks.json generator has no per-entry
+//                   matcher, the same way guard-secret-value.js is wired) - the tool_name check below does
+//                   the filtering. Output: { permission, agent_message }.
 //   stop         -> once per session: a change that hit watch.json asks for the owning sections to be
 //                   rewritten when a rule moved, or confirmed. Output: { followup_message } - Cursor's stop
 //                   cannot block, so this is a nudge rather than a hard gate.
@@ -34,7 +34,7 @@ const readInput = () => { try { const v = JSON.parse(fs.readFileSync(0, 'utf8') 
 // changes with every user message, so it is the wrong key for session state).
 const sessionKey = (input) => input.session_id || input.conversation_id || 'none';
 const statePath = (s) => path.join(os.tmpdir(), `docs-session-${String(s || 'none').replace(/[^\w-]/g, '')}.json`);
-const loadState = (s) => { let v = {}; try { v = JSON.parse(fs.readFileSync(statePath(s), 'utf8')); } catch {} return { consults: [], holds: 0, edits: 0, asked: false, snapshot: null, folded: [], ...v }; };
+const loadState = (s) => { let v = {}; try { v = JSON.parse(fs.readFileSync(statePath(s), 'utf8')); } catch {} return { consults: [], holds: 0, edits: 0, asked: false, snapshot: null, ...v }; };
 const saveState = (s, v) => { try { fs.writeFileSync(statePath(s), JSON.stringify(v)); } catch {} };
 const emit = (text) => process.stdout.write(JSON.stringify({ additional_context: text }));
 const allow = () => process.stdout.write(JSON.stringify({ permission: 'allow' }));
@@ -77,11 +77,6 @@ function sessionStart(input, root, docs, state) {
   // re-announced at every session start.
   const landed = promoted.filter((p) => p.changed);
   for (const p of landed) log(root, input, { event: 'promote', branch: p.branch, how: p.how, results: p.results });
-  // What this fold changed under the session's feet, kept for the gate: these are decisions mainline did not hold a
-  // moment ago and this session has read none of them. Saved before the block switch, so turning the block off
-  // silences the announcement without blinding the gate.
-  const folded = landed.flatMap((p) => p.results.filter((x) => x.result !== 'conflict').map((x) => x.id));
-  if (folded.length) { state.folded = [...new Set([...state.folded, ...folded])]; saveState(sessionKey(input), state); }
   if (process.env.CURSOR_DOCS_BLOCK === '0') return;
   let st = null;
   try { st = docs.status(); } catch {}
@@ -244,7 +239,7 @@ function preToolUse(input, root, docs, state) {
   state.holds++;
   saveState(sessionKey(input), state);
   let hits = [];
-  try { hits = docs.where(targets, 3, state.folded); } catch {}
+  try { hits = docs.where(targets, 3); } catch {}
   let reason;
   if (!hits.length) {
     reason = `Architecture docs not read yet in this session. Before changing ${targets[0]}, see what is documented: ${READ} files`;

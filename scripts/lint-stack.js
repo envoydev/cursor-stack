@@ -707,12 +707,14 @@ function main()
     //     A third, whole-file exception: hooks/docs.js and hooks/docs-session.js.
     //     docs.js is DELIBERATELY byte-identical to the peer stack's copy (one
     //     source, diffable both ways), so it reads that stack's env names
-    //     (CLAUDE_PROJECT_DIR, CLAUDE_STACK_DOCS_PATH) and writes its
-    //     .claude/docs-log.jsonl ledger on purpose - a real mechanism, not
-    //     framing that leaked in. docs-session.js bridges into that engine
-    //     (sets those same env vars before requiring it) and writes the same
-    //     ledger path so one reader can tally both surfaces - see its own
-    //     header comment for the full account.
+    //     (CLAUDE_PROJECT_DIR, CLAUDE_STACK_DOCS_PATH) on purpose - a real
+    //     mechanism, not framing that leaked in. Its own ledger
+    //     (<docs-root>/docs-log.jsonl, resolved through docsRootEnv(), which
+    //     checks CURSOR_DOCS_PATH first) lands under this repo's docs root, not
+    //     a .claude/ path. docs-session.js bridges the project root into that
+    //     engine (sets CLAUDE_PROJECT_DIR before requiring it) and writes its
+    //     own rows to the same computed docs-root ledger, so one reader can
+    //     tally both surfaces - see its own header comment for the full account.
     const framingFiles = [README, STACK_HTML, TEMPLATE];
     // Every shell script in scripts/ - discovered, not named, so a script added later is
     // covered without anyone remembering to list it here. This deliberately picks up the two

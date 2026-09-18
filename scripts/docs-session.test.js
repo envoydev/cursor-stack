@@ -63,7 +63,8 @@ test('on mainline the start hook promotes a merged branch and says so', () => {
     const text = ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() }));
     assert.match(text, /Branch feat\/cap was merged: 1 doc section\(s\) folded into mainline/);
     assert.match(r.read('.claude/docs/architecture/references/patterns.md'), /capped at 10/);
-    assert.match(r.read('.claude/docs-log.jsonl'), /"event":"promote"/);
+    assert.match(r.read('.claude/docs/docs-log.jsonl'), /"event":"promote"/);
+    assert.ok(!r.exists('.claude/docs-log.jsonl'), 'the ledger lives under the docs root, beside hook-blocks');
   } finally { r.rm(); }
 });
 
@@ -80,7 +81,7 @@ test('every log row carries the session it came from', () => {
     r.git('merge', '-q', '--no-ff', '-m', 'merge', 'feat/logged');
     r.hook({ hook_event_name: 'sessionStart', session_id: one });
     r.hook({ hook_event_name: 'preToolUse', conversation_id: two, tool_name: 'Write', tool_input: { file_path: 'src/Api/Orders/Refund.cs' } });
-    const all = r.read('.claude/docs-log.jsonl').trim().split('\n').map((l) => JSON.parse(l));
+    const all = r.read('.claude/docs/docs-log.jsonl').trim().split('\n').map((l) => JSON.parse(l));
     // `doc-set` rows come from the docs.js CLI, which is a plain command and has no session to name.
     const rows = all.filter((x) => x.event !== 'doc-set');
     assert.ok(rows.length >= 2, 'both sessions logged');
@@ -171,7 +172,7 @@ test('no covering section: two holds pointing at the doc list, then the change g
     assert.match(r.hook(edit).stdout, /see what is documented: node \.cursor\/hooks\/docs\.js files/);
     assert.ok(denied(r.hook(edit)));
     assert.ok(!denied(r.hook(edit)));
-    assert.match(r.read('.claude/docs-log.jsonl'), /"event":"bypass"/);
+    assert.match(r.read('.claude/docs/docs-log.jsonl'), /"event":"bypass"/);
   } finally { r.rm(); }
 });
 
@@ -184,6 +185,12 @@ test('shell reads are never held; shell writes are', () => {
     assert.ok(denied(r.hook(pre('Shell', { command: "cat > src/Api/Orders/Refund.cs <<'EOF'\nclass Refund {}\nEOF" }, s))));
   } finally { r.rm(); }
 });
+
+// Source's 'PowerShell is the same shell route as Bash' test does not port: Cursor has one shell tool, named
+// Shell, and no PowerShell-named route to add - every place this hook tests a shell tool name already checks
+// name === 'Shell' (consultedBy's read check, the preToolUse tool filter, the write-target filter, and the
+// write-target branch itself), so the finding that test pins does not exist here. The test above already
+// covers the Shell route's read/write/consult behavior end to end.
 
 test('source roots come from watch.json; CURSOR_DOCS_GATE=0 turns the gate off', () => {
   const r = repo({ files: { 'app/Orders/Refund.cs': 'x\n', 'src/Other.cs': 'x\n' }, docs: { 'references/patterns.md': section('orders', 'app/Orders/**', 'App rule.'), 'watch.json': JSON.stringify({ sourceRoots: ['app'] }) } });

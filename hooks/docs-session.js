@@ -37,12 +37,20 @@ const loadState = (s) => { let v = {}; try { v = JSON.parse(fs.readFileSync(stat
 const saveState = (s, v) => { try { fs.writeFileSync(statePath(s), JSON.stringify(v)); } catch {} };
 const emit = (text) => process.stdout.write(JSON.stringify({ additional_context: text }));
 const allow = () => process.stdout.write(JSON.stringify({ permission: 'allow' }));
-// The same file docs.js's own CLI logger writes (.claude/docs-log.jsonl - unchanged there too, since the
-// engine stays byte-identical with claude-stack): one ledger for both surfaces, never split per platform.
+// The same file docs.js's own CLI logger writes (<docs-path>/docs-log.jsonl, resolved by docsRootEnv() -
+// the engine stays byte-identical with claude-stack, and both surfaces resolve the same Cursor-native
+// root): one ledger for both surfaces, never split per platform. It lives under the docs root beside
+// hook-blocks/, not under .claude/ - a Cursor project has no reason to grow that folder at all.
 // One log file holds every session's rows, and two sessions interleave in it, so each row carries the id
 // that tells them apart - sessionKey(), not input.session_id, since Cursor's own id lives under
 // conversation_id outside sessionStart.
-const log = (root, input, row) => { try { fs.appendFileSync(path.join(root, '.claude', 'docs-log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), session: sessionKey(input), ...row })}\n`); } catch {} };
+const log = (root, input, row) => {
+  try {
+    const dir = path.resolve(root, docsRootEnv());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'docs-log.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), session: sessionKey(input), ...row })}\n`);
+  } catch {}
+};
 
 function orientation(root, docs) {
   let block = '';

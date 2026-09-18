@@ -47,7 +47,12 @@ Invariants).
   transcript format Cursor does not produce). `docs-session.js` (`sessionStart` + `preToolUse`, wired
   unscoped like `guard-secret-value.js` since this installer's `hooks.json` generator carries no
   per-entry matcher + `stop`) makes the architecture docs the start of a session and keeps them honest
-  at its end: folds a merged branch's doc versions into mainline and pushes orientation, this branch's
+  at its end. HOW those docs are versioned is a `CURSOR_DOCS_VERSIONING` choice in the OS/user
+  environment, never a guess from git (absent, it falls back to detecting whether the docs are
+  committed, same as before this key existed): `git` means git versions the docs per branch, `local`
+  means the `.branches/` overlay. The setting WINS over what the repo does, and a disagreement is
+  reported by `docs.js status` and the `sessionStart` block rather than resolved the other way. It
+  folds a merged branch's doc versions into mainline and pushes orientation, this branch's
   overrides and conflicts on `sessionStart`; holds the first source change under a watched root until
   its covering section was read on `preToolUse`; nudges a rewrite of a section a watched change hit,
   once, on `stop` (Cursor's `stop` cannot block, so this is a nudge, not a hard gate).

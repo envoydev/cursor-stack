@@ -118,6 +118,20 @@ test('the start block names conflict markers and duplicate ids, and a detached H
   } finally { r.rm(); }
 });
 
+// The declared mode wins over what the repo does, so a session that is about to write a doc is told when the two
+// disagree - in place with nothing versioning it, or into an overlay beside a committed file.
+test('the start block names a versioning mismatch in both directions', () => {
+  const ignored = repo({ docs: { 'references/patterns.md': PATTERNS, 'ORIENTATION.md': ORIENT } });
+  const committed = repo({ tracked: true, docs: { 'references/patterns.md': PATTERNS, 'ORIENTATION.md': ORIENT } });
+  try {
+    assert.match(ctx(ignored.hook({ hook_event_name: 'sessionStart', session_id: sid() }, { CURSOR_DOCS_VERSIONING: 'git' })),
+      /Versioning mismatch: CURSOR_DOCS_VERSIONING declares 'git' in your environment, but \.claude\/docs\/architecture is not tracked by git - the setting wins, so doc sections are written in place/);
+    assert.match(ctx(committed.hook({ hook_event_name: 'sessionStart', session_id: sid() }, { CURSOR_DOCS_VERSIONING: 'local' })),
+      /Versioning mismatch: CURSOR_DOCS_VERSIONING declares 'local' in your environment, but \.claude\/docs\/architecture is tracked by git - the setting wins, so this branch's sections stay in the overlay/);
+    for (const r of [ignored, committed]) assert.doesNotMatch(ctx(r.hook({ hook_event_name: 'sessionStart', session_id: sid() })), /Versioning mismatch/, 'nothing declared, nothing said');
+  } finally { ignored.rm(); committed.rm(); }
+});
+
 // Source test 'subagent start gets the orientation without branch lines or promotion' dropped here - Cursor's
 // subagentStart cannot carry additional_context (only { permission, user_message }), so docs-session.js does
 // not wire that event at all. See the module header note and docs-session.js's own NOT SHIPPED comment.

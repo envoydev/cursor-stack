@@ -32,8 +32,10 @@ function repo({ tracked = false, files = {}, docs = {}, docsPath = '.claude/docs
   git('commit', '-qm', 'seed');
   // CLAUDE_* vars steer docs.js's own CLI (cli()); CURSOR_DOCS_PATH steers docs-session.js's
   // docsRootEnv(), which it bridges into CLAUDE_STACK_DOCS_PATH before requiring docs.js - both must
-  // name the same docsPath so a hook() call finds the docs files repo() just wrote.
-  const env = (extra) => ({ ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_STACK_DOCS_PATH: docsPath, CLAUDE_DOCS_PATH: '', CURSOR_DOCS_PATH: docsPath, ...extra });
+  // name the same docsPath so a hook() call finds the docs files repo() just wrote. CURSOR_DOCS_VERSIONING
+  // is scrubbed like the legacy docs-path spelling: this runner may itself sit in a session whose own
+  // environment declares a mode, and a fixture must exercise the mode the CASE hands it.
+  const env = (extra) => ({ ...process.env, CLAUDE_PROJECT_DIR: root, CLAUDE_STACK_DOCS_PATH: docsPath, CLAUDE_DOCS_PATH: '', CURSOR_DOCS_PATH: docsPath, CURSOR_DOCS_VERSIONING: '', CLAUDE_STACK_DOCS_VERSIONING: '', ...extra });
   const cli = (args, input, extra = {}) => spawnSync(process.execPath, [path.join(HOOKS, 'docs.js'), ...args], { cwd: root, input, encoding: 'utf8', env: env(extra) });
   const hook = (payload, extra = {}) => spawnSync(process.execPath, [path.join(HOOKS, 'docs-session.js')], { cwd: root, input: JSON.stringify(payload), encoding: 'utf8', env: env(extra) });
   return {

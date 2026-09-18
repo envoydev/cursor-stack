@@ -95,6 +95,13 @@ function sessionStart(input, root, docs, state) {
   // The declared mode wins over what git does, so where the two disagree the session is told before it writes a doc:
   // one line, the engine's own wording, and nothing at all when nothing is declared or the two agree.
   if (st && st.mismatch) extra.push(st.mismatch);
+  // Branch versions nothing can reach under git versioning. Only `docs.js status` knew, and nothing runs that by
+  // itself - so a decision written under the overlay model sat unreadable and unmentioned, session after session.
+  // Nothing sweeps them either - the 30-day sweep stands down under git versioning - so this line comes back every
+  // session. It is a prompt only if it names the command that ends it, with the branch filled in; a placeholder
+  // would make it a nag. The field is guarded like its neighbours: an older engine beside this hook returns a
+  // status without it, and an unguarded read would throw away the whole block.
+  if (st && st.stranded && st.stranded.length) extra.push(`Doc versions stranded by this install's git versioning: ${st.stranded.slice(0, 6).join(', ')}${st.stranded.length > 6 ? ` (+${st.stranded.length - 6} more)` : ''} - nothing reads or promotes .branches/ any more, and this line returns every session until they are gone: re-apply what is still wanted with \`${READ} set <file>#<id>\`, then end it with \`${READ} prune ${st.stranded[0]}\`${st.stranded.length > 1 ? ' (one prune per name)' : ''}.`);
   // After a git merge of committed docs, or a hand edit: the two breakages that make a doc untrustworthy to read.
   let broken = [];
   try { broken = docs.lint().problems.filter((p) => /^(merge conflict markers|duplicate id)/.test(p)); } catch {}

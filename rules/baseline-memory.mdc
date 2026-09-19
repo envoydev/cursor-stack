@@ -16,8 +16,11 @@ project's documented facts.
 
 - The user corrects you, states a preference, or you learn a project fact no docs domain holds: save
   it with `memory_store`, `metadata.type` set to `preference_signal` (preference), `user_correction`
-  (correction), or `reference` (project fact). Tag `project:<name>` (the repo's folder name) - a
-  preference true in every project carries none.
+  (correction), or `reference` (project fact). Tag `project:<name>` using the tag the session start
+  push names (`This project's memory tag: project:<name>`) - the MAIN checkout's name, never a git
+  worktree's own folder name (a worktree session tagging its own folder hides its notes from every
+  other session of the same project, and from the main checkout). A preference true in every project
+  carries none.
 - A dispatched subagent saves only a lesson worth keeping past its own task - a build quirk, a fix
   that worked, a trap - typed `learning` (lesson), tagged `agent:<agent-name>` and `project:<name>`.
   Task progress and handoffs go to serena's memory, never here.

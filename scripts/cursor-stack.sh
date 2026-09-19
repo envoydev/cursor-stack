@@ -115,6 +115,14 @@ if [ -n "$PLAYWRIGHT_ENABLED" ] && [ -n "$PLAYWRIGHT_BROWSERS" ]; then
 fi
 
 SCOPE="${SCOPE:-project}"
+# 'project' level makes no sense at account scope: there is no single repo for
+# <project>/.memory-mcp/memory.db to belong to, and an unflagged later update would read the ONE
+# account-scope mcp.json first and silently adopt whichever repo happened to install last as the
+# account-wide db - a usage error catches this before anything is written, not a guess.
+if [ "$SCOPE" = "global" ] && [ "$MEMORY_LEVEL" = "project" ]; then
+  echo "usage: memory-project is a per-repo level - it is not valid with SCOPE=global (use memory-global or memory-scoped for an account-wide install)" >&2
+  exit 1
+fi
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 
 prerequisites_check() {
@@ -190,6 +198,24 @@ HOME_MEMORY_DIR="$HOME/.memory-mcp"
 if [ "$SCOPE" = "project" ]; then
   cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 fi
+
+# The memory MCP's project-level db root - the MAIN checkout, never a linked worktree's own folder
+# (M11). `git rev-parse --show-toplevel` alone answers with the WORKTREE's own directory, so a
+# project-level db installed from a worktree would live there and vanish the moment that worktree is
+# removed, orphaned from every other checkout of the same repo. `--git-common-dir` is the one path
+# every worktree of a repo shares (it always ends in '.git'); its parent is the main checkout
+# whichever worktree this runs from. Falls back to --show-toplevel (a plain, non-worktree checkout),
+# then the current directory (not a git repo at all) - same three-step fallback as memory.js's own
+# projectName, so the installer and the hook always agree on this path.
+_main_checkout_root() {
+  local common
+  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$common" ] && [ "$(basename "$common")" = ".git" ]; then
+    dirname "$common"; return 0
+  fi
+  git rev-parse --show-toplevel 2>/dev/null || pwd
+}
+MEMORY_PROJECT_ROOT="$(_main_checkout_root)"
 
 # ===========================================================================
 # MANIFEST - edit these, then run.
@@ -343,7 +369,9 @@ MEMORY_PRAGMAS="busy_timeout=15000"
 # it defaults to global exactly like an explicit 'memory-global' would.
 case "$MEMORY_LEVEL" in
   scoped) MEMORY_DB_PATH="@HOME_MEMORY_DIR@/memory_${SPACE:-default}.db" ;;
-  project) MEMORY_DB_PATH='${CLAUDE_PROJECT_DIR:-.}/.memory-mcp/memory.db' ;;  # single-quoted: stays literal for set_cursor_mcps' own token substitution
+  # @MEMORY_PROJECT_ROOT@, not ${CLAUDE_PROJECT_DIR:-.} - the MAIN checkout, never a worktree's own
+  # folder (M11); resolved above, once, the same way memory.js's own projectName resolves it.
+  project) MEMORY_DB_PATH="@MEMORY_PROJECT_ROOT@/.memory-mcp/memory.db" ;;
   *) MEMORY_DB_PATH="@HOME_MEMORY_DIR@/memory.db" ;;
 esac
 MEMORY_ENTRY="memory|-e MCP_MEMORY_STORAGE_BACKEND=$MEMORY_BACKEND -e MCP_MEMORY_SQLITE_PATH=$MEMORY_DB_PATH -e MCP_MEMORY_SQLITE_PRAGMAS=$MEMORY_PRAGMAS -- uvx --with numpy --from $MEMORY_SPEC memory server"
@@ -670,6 +698,7 @@ set_cursor_mcps() {
     name="${entry%%|*}"; args="${entry#*|}"
     spec="${args//@SERENA_CONTEXT@/$SERENA_CTX}"
     spec="${spec//@HOME_MEMORY_DIR@/$HOME_MEMORY_DIR}"
+    spec="${spec//@MEMORY_PROJECT_ROOT@/$MEMORY_PROJECT_ROOT}"
     spec="${spec//"$tok_proj"/$proj_dir}"
     spec="${spec//"$tok_cfg"/$CONFIG_DIR}"
     # Cursor's launch-time interpolation syntax is ${env:VAR} (no shell ${VAR} expansion) - rewrite any
@@ -682,7 +711,21 @@ set_cursor_mcps() {
 
   local prog; prog=$(cat <<'PY'
 import json, os, sys
-path, action, sentry_auth, pw_browsers, pw_enabled, mem_level = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5], sys.argv[6]
+path, action, sentry_auth, pw_browsers, pw_enabled, mem_level, home_memory_dir, memory_project_root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8]
+
+# The level name for a db path this run did NOT just build - the inverse of the case statement above
+# (scoped/project/default) that built MEMORY_DB_PATH, for the ONE log line below. 'custom' covers
+# anything else: a hand-edited path, or one written before this feature existed.
+def _memory_level_of(p):
+    if not p:
+        return "custom"
+    if p == os.path.join(home_memory_dir, "memory.db"):
+        return "global"
+    if os.path.dirname(p) == home_memory_dir and os.path.basename(p).startswith("memory_") and os.path.basename(p).endswith(".db"):
+        return "scoped"
+    if p == os.path.join(memory_project_root, ".memory-mcp", "memory.db"):
+        return "project"
+    return "custom"
 # Refuse a file that parses to the wrong shape rather than falling back to {} - that would REPLACE
 # whatever the project already has in mcp.json with just the stack's own servers. An array, string,
 # number or boolean all parse fine, and data.setdefault below would then throw on any of them
@@ -800,10 +843,17 @@ for name, spec in lines:
     # memory, no level word this run: keep the EXISTING registration's db path byte-for-byte (a level
     # word always wins outright) and only upgrade the rest of the entry (command/args/pin/pragmas) -
     # so a plain `update` never silently relocates a project's or a space's memories to global.
-    if name == "memory" and not mem_level and old is not None:
+    # A level word THAT CHANGES the path (a flag re-pointing an existing registration): the old
+    # memories are not moved, so the command must say where they still are - one line, both twins,
+    # read by the commands (I3).
+    if name == "memory" and old is not None:
         old_path = (old.get("env") or {}).get("MCP_MEMORY_SQLITE_PATH")
-        if old_path:
-            env["MCP_MEMORY_SQLITE_PATH"] = old_path
+        if not mem_level:
+            if old_path:
+                env["MCP_MEMORY_SQLITE_PATH"] = old_path
+        elif old_path and old_path != env.get("MCP_MEMORY_SQLITE_PATH"):
+            print("  memory: level %s -> %s: %s (old memories stay in %s)" % (
+                _memory_level_of(old_path), mem_level, env.get("MCP_MEMORY_SQLITE_PATH"), old_path))
     server = {"command": cmd, "args": cmd_args}
     if env:
         server["env"] = env
@@ -817,9 +867,9 @@ PY
   # keeps that exit from taking the whole install down under `set -euo pipefail` - without it the
   # pipeline's failure aborts the script here, before migrate_docs_domains ever runs, which is the
   # exact bug this fix removes.
-  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED" "$MEMORY_LEVEL" || log "  !! mcp.json wiring failed - left untouched"
+  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED" "$MEMORY_LEVEL" "$HOME_MEMORY_DIR" "$MEMORY_PROJECT_ROOT" || log "  !! mcp.json wiring failed - left untouched"
   ensure_playwright_browser "$mcp_path"
-  ensure_memory_gitignore "$mcp_path" "$proj_dir"
+  ensure_memory_gitignore "$mcp_path" "$MEMORY_PROJECT_ROOT"
 }
 
 # After set_cursor_mcps has written (or left untouched) mcp.json, keep a project-level memory db out of
@@ -830,7 +880,7 @@ PY
 # existing project-level path byte-for-byte (no level word this run) is covered too, not just a fresh
 # `memory-project` install.
 ensure_memory_gitignore() {
-  local mcp_path="$1" proj_dir="$2" db_path gitignore_dir
+  local mcp_path="$1" memory_project_root="$2" db_path gitignore_dir
   command -v python3 >/dev/null 2>&1 || return 0
   db_path="$(python3 -c '
 import json, sys
@@ -841,8 +891,8 @@ except Exception:
 print(((servers.get("memory") or {}).get("env") or {}).get("MCP_MEMORY_SQLITE_PATH") or "")' "$mcp_path" 2>/dev/null)"
   [ -n "$db_path" ] || return 0
   case "$db_path" in
-    "$proj_dir/.memory-mcp/"*)
-      gitignore_dir="$proj_dir/.memory-mcp"
+    "$memory_project_root/.memory-mcp/"*)
+      gitignore_dir="$memory_project_root/.memory-mcp"
       if [ ! -f "$gitignore_dir/.gitignore" ]; then
         if mkdir -p "$gitignore_dir" 2>/dev/null && printf '*\n' > "$gitignore_dir/.gitignore" 2>/dev/null; then
           log "  cursor memory: .memory-mcp/.gitignore written (project-level db kept out of git)"

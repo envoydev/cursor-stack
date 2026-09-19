@@ -210,6 +210,14 @@ function Test-Prerequisites {
 }
 
 $Scope = if ($env:SCOPE) { $env:SCOPE } else { 'project' }
+# 'project' level makes no sense at account scope: there is no single repo for
+# <project>/.memory-mcp/memory.db to belong to, and an unflagged later update would read the ONE
+# account-scope mcp.json first and silently adopt whichever repo happened to install last as the
+# account-wide db - a usage error catches this before anything is written, not a guess.
+if ($Scope -eq 'global' -and $MemoryLevel -eq 'project') {
+  Write-Error 'usage: -MemoryLevel project is a per-repo level - it is not valid with SCOPE=global (use global or scoped for an account-wide install)'
+  exit 1
+}
 
 # This script provisions the Cursor agent.
 $Agent = 'cursor'
@@ -218,12 +226,36 @@ $Agent = 'cursor'
 # ~/.cursor - so a cursor install is fully self-contained.
 $ConfigDir = Join-Path $HOME '.cursor'
 
+# Shared memory root - always resolved at install time, and deliberately outside the project so
+# recall carries across every project installed into. Reused both for the ${HOME_MEMORY_DIR} token
+# substitution below and for Get-MemoryLevelOf's own level detection.
+$HomeMemoryDir = Join-Path $HOME '.memory-mcp'
+
 $SerenaCtx = 'ide-assistant'   # serena's --context for Cursor (generic ide-assistant)
 
 if ($Scope -eq 'project') {
   $top = (& git rev-parse --show-toplevel 2>$null)
   if ($LASTEXITCODE -eq 0 -and $top) { Set-Location -LiteralPath $top }
 }
+
+# The memory MCP's project-level db root - the MAIN checkout, never a linked worktree's own folder
+# (M11). `git rev-parse --show-toplevel` alone answers with the WORKTREE's own directory, so a
+# project-level db installed from a worktree would live there and vanish the moment that worktree is
+# removed, orphaned from every other checkout of the same repo. `--git-common-dir` is the one path
+# every worktree of a repo shares (it always ends in '.git'); its parent is the main checkout
+# whichever worktree this runs from. Falls back to --show-toplevel (a plain, non-worktree checkout),
+# then the current directory (not a git repo at all) - same three-step fallback as memory.js's own
+# projectName, so the installer and the hook always agree on this path.
+function Get-MainCheckoutRoot {
+  $common = (& git rev-parse --path-format=absolute --git-common-dir 2>$null)
+  if ($LASTEXITCODE -eq 0 -and $common -and (Split-Path -Leaf $common) -eq '.git') {
+    return (Split-Path -Parent $common)
+  }
+  $top = (& git rev-parse --show-toplevel 2>$null)
+  if ($LASTEXITCODE -eq 0 -and $top) { return $top }
+  return (Get-Location).Path
+}
+$MemoryProjectRoot = Get-MainCheckoutRoot
 
 # ===========================================================================
 # MANIFEST - edit these, then run.
@@ -368,9 +400,12 @@ $MemoryPragmas = 'busy_timeout=15000'
 # (Cursor/uvx accept them there), so every form uses them - one separator, both platforms, no Join-Path
 # platform-detection needed here.
 $MemorySpaceFile = if ($Space) { "memory_$Space.db" } else { 'memory_default.db' }
+# 'project' uses $MemoryProjectRoot directly (already an absolute, concrete path resolved above), not
+# a ${CLAUDE_PROJECT_DIR:-.}-style token - it must survive being installed from a worktree, so it is
+# the MAIN checkout root, which nothing else in this script's token substitution knows how to resolve.
 $MemoryDbPath = switch ($MemoryLevel) {
   'scoped'  { '${HOME_MEMORY_DIR}/' + $MemorySpaceFile }
-  'project' { '${CLAUDE_PROJECT_DIR:-.}/.memory-mcp/memory.db' }
+  'project' { (($MemoryProjectRoot -replace '\\', '/') + '/.memory-mcp/memory.db') }
   default   { '${HOME_MEMORY_DIR}/memory.db' }
 }
 $MemoryEntry = 'memory|-e MCP_MEMORY_STORAGE_BACKEND=' + $MemoryBackend +
@@ -845,7 +880,7 @@ function Set-CursorMcps {
     }
     $spec = $parts[1].Replace('@SERENA_CONTEXT@', $SerenaCtx)
     $spec = $spec.Replace('${CLAUDE_PROJECT_DIR:-.}', $projDir).Replace('${CLAUDE_CONFIG_DIR}', $cfgDir)
-    $spec = $spec.Replace('${HOME_MEMORY_DIR}', (Join-Path $HOME '.memory-mcp'))
+    $spec = $spec.Replace('${HOME_MEMORY_DIR}', $HomeMemoryDir)
     # Cursor's launch-time interpolation syntax is ${env:VAR} (no shell ${VAR} expansion) - rewrite any
     # remaining bare ${VAR} token into it (none in the current baseline - the remote entries below carry
     # their ${env:VAR} form directly; kept for future stdio entries; $$ = literal $ in a .NET regex
@@ -901,10 +936,17 @@ function Set-CursorMcps {
     # memory, no level word this run: keep the EXISTING registration's db path byte-for-byte (a level
     # word always wins outright) and only upgrade the rest of the entry (command/args/pin/pragmas) -
     # so a plain `update` never silently relocates a project's or a space's memories to global.
-    if ($name -eq 'memory' -and -not $MemoryLevel -and $old) {
+    # A level word THAT CHANGES the path (a flag re-pointing an existing registration): the old
+    # memories are not moved, so the command must say where they still are - one line, both twins,
+    # read by the commands (I3).
+    if ($name -eq 'memory' -and $old) {
       $oldEnv = Get-DictValue $old.Value 'env'
       $oldPath = Get-DictValue $oldEnv 'MCP_MEMORY_SQLITE_PATH'
-      if ($oldPath) { $envMap['MCP_MEMORY_SQLITE_PATH'] = $oldPath }
+      if (-not $MemoryLevel) {
+        if ($oldPath) { $envMap['MCP_MEMORY_SQLITE_PATH'] = $oldPath }
+      } elseif ($oldPath -and $oldPath -ne $envMap['MCP_MEMORY_SQLITE_PATH']) {
+        Log ('  memory: level ' + (Get-MemoryLevelOf $oldPath) + ' -> ' + $MemoryLevel + ': ' + $envMap['MCP_MEMORY_SQLITE_PATH'] + ' (old memories stay in ' + $oldPath + ')')
+      }
     }
     $server = [ordered]@{ command = $cmd; args = @($cmdArgs) }
     if ($envMap.Count -gt 0) { $server['env'] = $envMap }
@@ -915,7 +957,20 @@ function Set-CursorMcps {
   Write-JsonFile $data $mcpPath
   Log "  cursor mcp.json -> $mcpPath"
   Install-PlaywrightBrowser $data
-  Set-MemoryGitignore $data $projDir
+  Set-MemoryGitignore $data $MemoryProjectRoot
+}
+
+# The level name for a db path this run did NOT just build - the inverse of $MemoryDbPath's own
+# switch (scoped/project/default), for Set-CursorMcps' one log line (I3). 'custom' covers anything
+# else: a hand-edited path, or one written before this feature existed.
+function Get-MemoryLevelOf([string]$Path) {
+  if (-not $Path) { return 'custom' }
+  $norm = $Path -replace '\\', '/'
+  if ($norm -eq (($HomeMemoryDir -replace '\\', '/') + '/memory.db')) { return 'global' }
+  $homeNorm = $HomeMemoryDir -replace '\\', '/'
+  if ($norm -match '^' + [regex]::Escape($homeNorm) + '/memory_[^/]+\.db$') { return 'scoped' }
+  if ($norm -eq (($MemoryProjectRoot -replace '\\', '/') + '/.memory-mcp/memory.db')) { return 'project' }
+  return 'custom'
 }
 
 # Reads a value by key off either a real IDictionary (a hashtable/ordered dictionary this run just
@@ -939,13 +994,13 @@ function Get-DictValue($Obj, [string]$Key) {
 # path back from $Data (this run's own in-memory result) rather than from $MemoryLevel, so a plain
 # `update` that kept an existing project-level path byte-for-byte (no level word this run) is covered
 # too, not just a fresh -MemoryLevel project install.
-function Set-MemoryGitignore($Data, $ProjDir) {
+function Set-MemoryGitignore($Data, $MemoryProjectRoot) {
   $mem = $Data.mcpServers.PSObject.Properties['memory']
   if (-not $mem) { return }
   $envObj = Get-DictValue $mem.Value 'env'
   $dbPath = [string](Get-DictValue $envObj 'MCP_MEMORY_SQLITE_PATH')
   if (-not $dbPath) { return }
-  $memDir = Join-Path $ProjDir '.memory-mcp'
+  $memDir = Join-Path $MemoryProjectRoot '.memory-mcp'
   try {
     # GetFullPath normalizes mixed '/'/'\' separators (the project-level template mixes them - see the
     # entry's own comment above) so this compares real filesystem locations, not raw strings.

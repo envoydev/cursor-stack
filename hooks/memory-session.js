@@ -6,41 +6,58 @@
 // instead of the peer's hookSpecificOutput wrapper, and the closing line names the memory MCP's tools
 // directly - Cursor has no tool-search deferral to route through. memory.js (the engine) is copied
 // beside this hook and not itself wired to an event - same split as docs.js beside docs-session.js.
-// Silent wherever nothing can be shown: no memory server registered for this project, an empty
-// selection, a missing/locked/wrong-schema database, a Node below 22.13 (memory.js's own
-// selectForSession already degrades to an empty selection there), garbage or slow-to-arrive stdin, or
-// any other error - exit 0 throughout, since a session start that cannot be enriched must never be a
-// session start that fails.
+// Whenever a memory registration is found, the push always names this project's own tag (even with
+// nothing else to show - I5), so the model knows what to save under, especially inside a git
+// worktree, where that name is the MAIN checkout's, never the worktree's own folder. Fully silent
+// only when there is no registration to report at all: a missing/locked/wrong-schema database, a
+// Node below 22.13 (memory.js's own selectForSession already degrades to an empty selection there),
+// garbage or slow-to-arrive stdin, or any other error - exit 0 throughout, since a session start that
+// cannot be enriched must never be a session start that fails.
 'use strict';
-const fs = require('fs');
 const os = require('os');
 
 const CAP_BYTES = 4096;
 const STDIN_TIMEOUT_MS = 2000;
 const TOOLS_LINE = "Store, search or list more with the memory MCP's memory_store / memory_search / memory_list tools.";
 
-// Bounded stdin read: resolves with the parsed payload once stdin closes, or with {} after
-// STDIN_TIMEOUT_MS if it never does - a hook whose stdin is never closed must not hang until the
-// harness's own hook timeout kills it. `stream` is injectable for tests (defaults to process.stdin).
-function readInput(stream = process.stdin) {
+// A plain stdin read blocks forever when stdin never closes (a TTY, or a harness that keeps the pipe
+// open) - this hook only ever needs `cwd`/`workspace_roots` out of the payload, and those already
+// have a process.cwd() fallback below, so giving up after STDIN_TIMEOUT_MS and treating the payload
+// as empty costs nothing but the sessionStart push for that one unreadable call. The timer is
+// deliberately NOT unref'd: a resumed stdin keeps the event loop alive on its own, and an unref'd
+// stdin (tried first, measured) lets the loop see itself as empty and exit within milliseconds -
+// before either the data/end event OR the timeout ever fires. `finish()`'s own `pause()` +
+// `removeAllListeners()` is what actually drops the ref once this settles; `process.exit(0)` right
+// after `main()` below is the real bound, independent of any of this - ported from the peer stack's
+// memory-session.js after its own port of this hook reproduced the exact stdin-hang bug that fix
+// addressed (an open pipe nobody writes to or closes kept the process alive past the timer, because
+// the timer firing only resolved the promise - it never released the still-attached listeners).
+function readStdinBounded(timeoutMs) {
   return new Promise((resolve) => {
     let data = '';
     let settled = false;
-    const finish = () => {
+    const finish = (value) => {
       if (settled) return;
       settled = true;
-      try { const v = JSON.parse(data || '{}'); resolve(v && typeof v === 'object' ? v : {}); } catch { resolve({}); }
+      clearTimeout(timer);
+      try { process.stdin.pause(); process.stdin.removeAllListeners('data'); process.stdin.removeAllListeners('end'); process.stdin.removeAllListeners('error'); } catch {}
+      resolve(value);
     };
-    const timer = setTimeout(finish, STDIN_TIMEOUT_MS);
-    if (timer.unref) timer.unref();
+    const timer = setTimeout(() => finish(data), timeoutMs);
     try {
-      stream.setEncoding('utf8');
-      stream.on('data', (chunk) => { data += chunk; });
-      stream.on('end', () => { clearTimeout(timer); finish(); });
-      stream.on('error', () => { clearTimeout(timer); finish(); });
-    } catch { clearTimeout(timer); finish(); }
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (chunk) => { data += chunk; });
+      process.stdin.on('end', () => finish(data));
+      process.stdin.on('error', () => finish(data));
+      process.stdin.resume();
+    } catch { finish(''); }
   });
 }
+
+const readInput = async () => {
+  const raw = await readStdinBounded(STDIN_TIMEOUT_MS);
+  try { const v = JSON.parse(raw || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
+};
 
 const emit = (text) => process.stdout.write(JSON.stringify({ additional_context: text }));
 
@@ -62,12 +79,20 @@ async function main() {
   let related = [];
   try { related = memory.relatedProjects(root, require('./docs.js').DOCS_ROOT); } catch {}
   const { text } = memory.selectForSession(dbPath, { project, related, capBytes: CAP_BYTES });
-  if (!text) return;
-  const lines = [`Memory (memory MCP, ${level}):`, text, '', TOOLS_LINE];
+  // Whenever a memory registration exists, the model needs its own project's tag to save under -
+  // even (especially) inside a git worktree, where projectName() already names the MAIN checkout,
+  // never the worktree's own folder (I5). Nothing selected: keep the push to just this line plus the
+  // tools line, no header, no body - still short enough to never be worth suppressing.
+  const tagLine = `This project's memory tag: project:${project}`;
+  const lines = text
+    ? [`Memory (memory MCP, ${level}):`, tagLine, text, '', TOOLS_LINE]
+    : [tagLine, TOOLS_LINE];
   emit(lines.join('\n'));
 }
 
-module.exports = { main, readInput };
+module.exports = { main };
 if (require.main === module) {
-  main().catch(() => { /* a session start must never fail here - no output, exit 0 */ });
+  // process.exit(0) rather than letting the event loop drain on its own: a stdin handle the bounded
+  // read above could not fully detach from must never keep this process alive past its own work.
+  main().catch(() => {}).then(() => process.exit(0));
 }

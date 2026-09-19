@@ -66,20 +66,30 @@ Invariants).
   either, so a raw diff of the two files is wider than the platform lines alone would explain).
   `docs.js` answers no hook event itself, so it carries no `hooks.json` entry despite living on disk
   beside the hook that requires it. `memory-session.js` (`sessionStart`, the eighth) pushes the memory
-  MCP's own stored preferences, corrections, project facts and lessons into the session - own-project
-  rows first, then global (untagged) preferences/corrections, then related-project rows, newest first
-  within each group, capped at 4KB - with its engine `memory.js` copied beside it the same way
-  `docs.js` sits beside `docs-session.js`. Silent whenever nothing can be shown (no memory server
-  registered for the project, an empty selection, `node:sqlite` unavailable below Node 22.13) - never
-  blocks a session start.
+  MCP's own stored preferences, corrections, project facts and lessons into the session -
+  preferences/corrections (this project's own or untagged/global) first, then this project's other
+  memories, then related-project rows, newest first within each group, each memory's content cut to
+  400 chars with '...', a row too big to fit SKIPPED rather than ending the list (one oversized older
+  row must never blank out every smaller row queued behind it), capped at 4KB overall - with its
+  engine `memory.js` copied beside it the same way `docs.js` sits beside `docs-session.js`. Whenever a
+  memory server is registered for the project the push always names this project's own tag (`This
+  project's memory tag: project:<name>`, the MAIN checkout's name even from a linked worktree), even
+  with nothing else to show. Fully silent only when there is no registration to report at all, or
+  when a selection error occurs (an empty database read failure, `node:sqlite` unavailable below Node
+  22.13) - never blocks a session start.
 - `scripts/guard-hooks.test.js` - behavior tests for the six guards, `scripts/docs-session.test.js`
   for the docs hook (`docs-session.js`'s `writeTargets` / `consultedBy` / `toolPaths`, ported from
   claude-stack's own suite the same way `scripts/docs-engine.test.js` ports the closely-mirrored engine's),
   and `scripts/memory-session.test.js` + `scripts/memory-engine.test.js` for the memory hook and its
-  engine (ported the same way, plus a stdin-bound test and a linked-worktree `projectName` regression
-  test neither peer file carries yet); `npm test` runs the lint then every `*.test.js` node discovers.
-  Each drives its hook the way Cursor does: payload JSON on stdin, permission / context / followup read
-  off stdout.
+  engine (ported the same way, including the peer's own real-`spawn`, open-unclosed-pipe stdin-bound
+  test and its linked-worktree `projectName` regression test - a fake in-process stream is not enough
+  to catch a hook that keeps its stdin listeners attached past its own timeout, which is exactly the
+  shape the open-pipe version catches). `scripts/installer-memory.test.js` drives
+  `cursor-stack.sh`/`.ps1` end to end (both twins, `pwsh` via `execFileSync`) for the memory MCP's own
+  level selection, keep-path-on-update, idempotence, a hand-added server surviving, malformed input,
+  and the `-MemoryLevel project`-at-`SCOPE=global` refusal. `npm test` runs the lint then every
+  `*.test.js` node discovers. Each hook test drives its hook the way Cursor does: payload JSON on
+  stdin, permission / context / followup read off stdout.
   They exist because these hooks are PORTED, and a port is exactly where a gate quietly stops gating -
   one of them pins a bug the port itself surfaced, where an absolute in-repo docs root made every
   conformant receipt fail its own file count.

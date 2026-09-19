@@ -196,20 +196,49 @@ test('relatedProjects reads RELATED-PROJECTS.md headings, else the generated .md
 
 // --- selectForSession ------------------------------------------------------------------------------
 
-test('own-project rows come first, newest first, before global preferences and related-project rows', { skip: skipNoSqlite }, () => {
+test('preferences/corrections (own or untagged) come first, then this project\'s other memories, then related, each newest first within its group', { skip: skipNoSqlite }, () => {
   const dir = tmpDir('memory-select-');
   try {
     const file = buildDb(dir, [
       { content: 'own newest', tags: 'project:myapp', memory_type: 'reference', created_at: 500 },
       { content: 'own oldest', tags: 'myapp', memory_type: 'learning', created_at: 100 }, // bare tag form
+      { content: 'own preference', tags: 'project:myapp', memory_type: 'preference_signal', created_at: 350 },
       { content: 'a global preference', tags: '', memory_type: 'preference_signal', created_at: 400 },
       { content: 'a global correction', tags: '', memory_type: 'user_correction', created_at: 300 },
       { content: 'sibling note', tags: 'project:sibling-a', memory_type: 'reference', created_at: 450 },
     ]);
     const { text, counts } = m.selectForSession(file, { project: 'myapp', related: ['sibling-a'], capBytes: 100000 });
     const order = text.split('\n').map((l) => l.replace(/^- \[[^\]]+\] /, ''));
-    assert.deepStrictEqual(order, ['own newest', 'own oldest', 'a global preference', 'a global correction', 'sibling note']);
-    assert.deepStrictEqual(counts, { own: 2, preference: 2, related: 1 });
+    // Group 1 (preference/correction, own-or-untagged) interleaves by recency regardless of whose
+    // tag it carries - an own-tagged preference is never demoted behind an untagged one just because
+    // it names a project. Group 2 (this project's other memories) and group 3 (related) follow.
+    assert.deepStrictEqual(order, ['a global preference', 'own preference', 'a global correction', 'own newest', 'own oldest', 'sibling note']);
+    assert.deepStrictEqual(counts, { preference: 3, own: 2, related: 1 });
+  } finally { rmDir(dir); }
+});
+
+test('content longer than 400 chars is cut with a trailing ...', { skip: skipNoSqlite }, () => {
+  const dir = tmpDir('memory-select-');
+  try {
+    const file = buildDb(dir, [{ content: 'z'.repeat(450), tags: 'project:myapp', memory_type: 'reference' }]);
+    const { text } = m.selectForSession(file, { project: 'myapp', capBytes: 100000 });
+    assert.strictEqual(text, `- [project fact] ${'z'.repeat(400)}...`);
+  } finally { rmDir(dir); }
+});
+
+test('a row that does not fit is skipped, never treated as the end of the list (continue, not break) - I4', { skip: skipNoSqlite }, () => {
+  const dir = tmpDir('memory-select-');
+  try {
+    // 'big' is newest (picked first by recency) and, even after the 400-char cut, still too large for
+    // the cap below; 'small' is older but fits easily. The old `break`-on-first-miss behaviour would
+    // have stopped at 'big' and never reached 'small' - this proves it does not.
+    const file = buildDb(dir, [
+      { content: 'b'.repeat(500), tags: 'project:myapp', memory_type: 'reference', created_at: 200 },
+      { content: 'ok', tags: 'project:myapp', memory_type: 'reference', created_at: 100 },
+    ]);
+    const { text, counts } = m.selectForSession(file, { project: 'myapp', capBytes: 50 });
+    assert.strictEqual(text, '- [project fact] ok');
+    assert.strictEqual(counts.own, 1);
   } finally { rmDir(dir); }
 });
 

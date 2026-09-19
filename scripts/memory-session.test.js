@@ -10,8 +10,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { EventEmitter } = require('node:events');
+const { spawnSync, spawn } = require('node:child_process');
 
 let DatabaseSync = null;
 try { process.removeAllListeners('warning'); ({ DatabaseSync } = require('node:sqlite')); } catch {}
@@ -78,10 +77,13 @@ test('a session start with a registered, populated database pushes the memory bl
     const text = out.additional_context;
     assert.strictEqual(typeof text, 'string');
     assert.match(text, /^Memory \(memory MCP, project\):/);
+    assert.match(text, new RegExp(`This project's memory tag: project:${projectName}`));
+    // I4: preferences/corrections (this project's or untagged) rank first, then this project's other
+    // memories, then related - never plain recency across every kind.
     const ownIdx = text.indexOf('own project note');
     const prefIdx = text.indexOf('a global preference');
     const sibIdx = text.indexOf('a sibling note');
-    assert.ok(ownIdx > -1 && prefIdx > ownIdx && sibIdx > prefIdx, text);
+    assert.ok(prefIdx > -1 && ownIdx > prefIdx && sibIdx > ownIdx, text);
     // No ToolSearch line - Cursor has no tool-search deferral, so the tools are named directly.
     assert.match(text, /memory_store \/ memory_search \/ memory_list/);
     assert.doesNotMatch(text, /ToolSearch/);
@@ -90,12 +92,15 @@ test('a session start with a registered, populated database pushes the memory bl
   } finally { p.rm(); }
 });
 
-test('an empty database is silent', { skip: skipNoSqlite }, () => {
+test('an empty database still pushes the project tag line alone - a registration is never fully silent (I5)', { skip: skipNoSqlite }, () => {
   const p = fixtureProject({ rows: [] });
   try {
+    const projectName = path.basename(p.root);
     const r = p.hook({ hook_event_name: 'sessionStart', workspace_roots: [p.root], cwd: p.root });
     assert.strictEqual(r.status, 0);
-    assert.strictEqual(r.stdout, '');
+    const text = JSON.parse(r.stdout).additional_context;
+    assert.strictEqual(text, `This project's memory tag: project:${projectName}\n${'Store, search or list more with the memory MCP\'s memory_store / memory_search / memory_list tools.'}`);
+    assert.doesNotMatch(text, /^Memory \(memory MCP/, 'no header or body when nothing was selected');
   } finally { p.rm(); }
 });
 
@@ -143,33 +148,42 @@ test('a 500-row database resolves in well under 1s', { skip: skipNoSqlite }, () 
 });
 
 // --- stdin bound ---------------------------------------------------------------------------------
-// A hook whose stdin is never closed must not hang until the harness's own hook timeout - readInput
-// races the real read against a 2s bound and resolves empty rather than waiting forever. Driven
-// directly against the exported function (not a spawned process) so the test does not itself need to
-// hold a pipe open indefinitely to prove it.
+// A hook whose stdin is never closed must not hang until the harness's own hook timeout. An earlier
+// version of this test drove the exported readInput() against a fake EventEmitter in-process - which
+// passed while the real spawned hook still hung forever, because a fake stream has no open OS handle
+// to keep the event loop alive and no listeners to fail to detach. Only a real child process with a
+// real, unwritten, unclosed pipe reproduces the harness/TTY scenario the hook must survive.
 
-test('readInput resolves to an empty payload after its bound when the stream never closes', async () => {
-  const { readInput } = require('../hooks/memory-session.js');
-  const fake = new EventEmitter();
-  fake.setEncoding = () => {};
+test('an open stdin that never closes still exits within 3s', () => new Promise((resolve, reject) => {
+  // spawnSync's own `input` option auto-closes stdin the instant nothing is written (measured: an
+  // instant exit, never reproducing the bug) - only a real `spawn` with a pipe nobody ever writes to
+  // or ends reproduces a harness that keeps stdin open. Before the fix (ported from the peer stack's
+  // memory-session.js) this hung forever: the timer fired but left its data/end/error listeners
+  // attached to the still-open process.stdin handle, which alone was enough to keep the process alive
+  // past process exit - the bound below must make it exit anyway.
+  const root = tmpDir('memory-session-openstdin-');
+  const home = tmpDir('memory-session-openstdin-home-');
+  const cleanup = () => { rmDir(root); rmDir(home); };
+  const child = spawn(process.execPath, [HOOK], {
+    cwd: root,
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
   const started = Date.now();
-  const result = await readInput(fake);
-  const elapsed = Date.now() - started;
-  assert.deepStrictEqual(result, {});
-  assert.ok(elapsed >= 1900, `resolved too early: ${elapsed}ms`);
-  assert.ok(elapsed < 3500, `resolved too late: ${elapsed}ms`);
-});
-
-test('readInput resolves as soon as the stream ends, well before the bound', async () => {
-  const { readInput } = require('../hooks/memory-session.js');
-  const fake = new EventEmitter();
-  fake.setEncoding = () => {};
-  const started = Date.now();
-  const p = readInput(fake);
-  fake.emit('data', JSON.stringify({ hook_event_name: 'sessionStart' }));
-  fake.emit('end');
-  const result = await p;
-  const elapsed = Date.now() - started;
-  assert.deepStrictEqual(result, { hook_event_name: 'sessionStart' });
-  assert.ok(elapsed < 500, `took ${elapsed}ms`);
-});
+  const watchdog = setTimeout(() => {
+    child.kill('SIGKILL');
+    cleanup();
+    reject(new Error('memory-session.js did not exit within 3s on an open stdin'));
+  }, 3000);
+  child.on('error', (e) => { clearTimeout(watchdog); cleanup(); reject(e); });
+  child.on('exit', (code) => {
+    clearTimeout(watchdog);
+    const elapsed = Date.now() - started;
+    cleanup();
+    try {
+      assert.strictEqual(code, 0);
+      assert.ok(elapsed < 3000, `took ${elapsed}ms`);
+      resolve();
+    } catch (e) { reject(e); }
+  });
+}));

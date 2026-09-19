@@ -185,14 +185,15 @@ SKILLS=(
   "envoydev/cursor-stack|dev-log-convert"                       # UA/EN work notes -> structured English work log; trigger 'dev-log'
   "envoydev/cursor-stack|explain-code-tutor"                    # senior-mentor explainer for code/bug/concept/trade-off via real-file walkthrough; depth ELI5/intermediate/expert
   "envoydev/cursor-stack|project-quality-loop"                  # autonomous review-and-fix loop pipeline over a loops/ folder of numbered prompts
-  "envoydev/cursor-stack|project-architecture-quality-loop"     # deliberate analyze-assess-improve loop - the project-architecture-analyzer capture writes ARCHITECTURE.md + ASSESSMENT.md, fix cons by tier, reconcile docs; manual /-only
-  "envoydev/cursor-stack|project-code-style-analyzer"           # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/PROJECT-CODE-STYLE.md, generates the glob-scoped project-code-style rule; manual /-only
-  "envoydev/cursor-stack|project-architecture-analyzer"         # deliberate architecture capture - dispatches architecture-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + ASSESSMENT.md + the generated awareness rule baseline-project-architecture.mdc; manual /-only
+  "envoydev/cursor-stack|project-architecture-quality-loop"     # deliberate analyze-assess-improve loop - runs the project-architecture-analyzer capture for the map + the project-architecture-quality-analyzer capture for findings, fix cons by tier, reconcile both docs; manual /-only
+  "envoydev/cursor-stack|project-code-style-analyzer"           # deliberate code-style capture - fans out code-style-analyzer per language, merges docs/code-style/CODE-STYLE.md, generates the glob-scoped project-code-style rule; manual /-only
+  "envoydev/cursor-stack|project-architecture-analyzer"         # deliberate architecture capture - dispatches architecture-analyzer per module, reasons in the main session, writes docs/architecture/ARCHITECTURE.md + the generated awareness rule baseline-project-architecture.mdc; manual /-only
+  "envoydev/cursor-stack|project-architecture-quality-analyzer" # deliberate pros/cons capture over the architecture map - dispatches architecture-analyzer per module, runs the findings gate in-session, writes docs/quality/ASSESSMENT.md fresh every run; reads decisions/, never writes them; manual /-only
   "envoydev/cursor-stack|project-test-coverage-analyzer"        # deliberate coverage capture - detect tooling per surface, instrumented run ONCE per surface in the main session, writes docs/test-coverage/COVERAGE.md (90% line after exclusions default, tiered weak points) + raw/ machine-readable results; manual /-only (the loop Read-loads it)
   "envoydev/cursor-stack|project-test-coverage-loop"            # deliberate coverage analyze-triage-fix loop - runs the capture, works weak points by tier (tests inline/implementer briefs, testability refactors approval-gated, structural = user decision), reconciles docs; manual /-only
   "envoydev/cursor-stack|project-version-upgrade"               # deliberate BREAKING version-event flow (framework/runtime/package major) - plan in-session via context7 + architecture-analyzer digests, approval gate (auto mode only on explicit user ask), staged execution via implementers + resolvers; manual /-only
   "envoydev/cursor-stack|project-agent-capabilities"            # deliberate capabilities capture - inventories installed skills/agents/MCPs, generates the awareness rule baseline-project-agent-capabilities.mdc; manual /-only
-  "envoydev/cursor-stack|project-related-context"               # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.mdc + docs/related-context/PROJECT-RELATED-CONTEXT.md; manual /-only
+  "envoydev/cursor-stack|project-related-context"               # deliberate related-projects capture - args paths/URLs, fans out related-project-analyzer per sibling, writes the awareness rule baseline-project-related-context.mdc + docs/related-projects/RELATED-PROJECTS.md; manual /-only
   "envoydev/cursor-stack|project-build-from-scratch"            # greenfield scaffolding + design->scaffold->slice-by-slice build orchestration over the pipeline
   "envoydev/cursor-stack|project-solve-cross-task"              # entry-point router: classify -> smallest execution mode -> cross-domain contract freeze + integration gate; home of the shared subagent policies
   "envoydev/cursor-stack|project-verify-plan"                   # audit an implementation plan BEFORE building - risk-coverage review (traps named per the stack skill, scope, edges, minimal); precedes /review
@@ -418,8 +419,8 @@ CURSOR_AGENTS=(
   "angular-test-resolver.md"                    # implement phase: ng test/Jest -> red->green repair loop, anti-reward-hacking, capped
   "architecture-analyzer.md"                    # analysis support: read-only per-module characterizer (purpose/surface/deps/patterns/smells) - the architecture + test-coverage captures fan it out, also independently callable
   "test-coverage-analyzer.md"                   # analysis phase: read-only per-surface coverage characterizer - the project-test-coverage-analyzer skill fans it out over the raw results; never runs the suite
-  "code-style-analyzer.md"                      # analysis phase: read-only per-language style characterizer - the project-code-style-analyzer skill fans it out per language and merges docs/PROJECT-CODE-STYLE.md + the inject-code-style hook from its structured reports
-  "related-project-analyzer.md"                 # analysis support: read-only sibling-repo characterizer (name/relation/first_read/seam, URL siblings shallow-cloned to scratch) - the project-related-context skill fans it out per sibling and merges docs/related-context/PROJECT-RELATED-CONTEXT.md
+  "code-style-analyzer.md"                      # analysis phase: read-only per-language style characterizer - the project-code-style-analyzer skill fans it out per language and merges docs/code-style/CODE-STYLE.md + the inject-code-style hook from its structured reports
+  "related-project-analyzer.md"                 # analysis support: read-only sibling-repo characterizer (name/relation/first_read/seam, URL siblings shallow-cloned to scratch) - the project-related-context skill fans it out per sibling and merges docs/related-projects/RELATED-PROJECTS.md
   "ci-failure-diagnoser.md"                     # analysis phase: read-only CI red-run diagnosis via gh - categorize, local repro, route
   "runtime-failure-diagnoser.md"                # analysis phase: read-only bug diagnosis from logs/errors/screenshots - root cause + route, no fix
   "evidence-gatherer.md"                        # diagnosis support: read-only - a diagnoser dispatches it to reproduce/confirm and return a compact digest, keeping log volume off the opus seat
@@ -906,6 +907,28 @@ PY
   fi
 }
 
+_migrate_docs_file() {  # $1 = old absolute path, $2 = new absolute path, $3 = label for the log line - ABSENT-ONLY: never overwrites an existing new file, never touches a missing old one (a plain rename/move, so content is unchanged)
+  local old="$1" new="$2" label="$3"
+  [ -f "$old" ] || return 0
+  if [ -e "$new" ]; then
+    log "  docs migration ($label): $new already exists - $old left in place, nothing overwritten"
+    return 0
+  fi
+  mkdir -p "$(dirname "$new")"
+  mv "$old" "$new"
+  log "  docs migration ($label): ${old##*/} -> $new"
+}
+
+migrate_docs_domains() {  # INSTALL + UPDATE: three absent-only moves onto the docs-domain layout - a file a capture used to write at the OLD path now writes at the NEW one, so an existing install's file is relocated once, byte-identical, and never overwrites a file already at the new path. Touches nothing else: related-context/ keeps every sibling-repo working paper - the capture's own drop-box for cross-repo plans, change requests, issue notes - exactly where it is; only the orientation doc this capture wrote moves out of it. Cursor has no per-project settings store, so the docs root here reads the SAME OS env var stamp_docs_root_rule stamps from - never a settings file.
+  local root docs_root base
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  docs_root="${CURSOR_DOCS_PATH:-.cursor/docs}"
+  base="$root/${docs_root%/}"
+  _migrate_docs_file "$base/PROJECT-CODE-STYLE.md" "$base/code-style/CODE-STYLE.md" "code style"
+  _migrate_docs_file "$base/architecture/ASSESSMENT.md" "$base/quality/ASSESSMENT.md" "architecture quality"
+  _migrate_docs_file "$base/related-context/PROJECT-RELATED-CONTEXT.md" "$base/related-projects/RELATED-PROJECTS.md" "related projects"
+}
+
 install_cursor_agents() {
   # Fetch each Cursor subagent .md into .cursor/agents/ (Cursor auto-discovers them - no settings wiring).
   # Content-compare-then-skip + per-agent fail-soft (a fetch
@@ -1004,6 +1027,7 @@ set_cursor_mcps
 set_cursor_hooks
 install_cursor_rules
 install_cursor_agents
+migrate_docs_domains
 write_stamp
 log "plugins: Cursor plugins install from Cursor chat, not this script. Run '/add-plugin superpowers' in Cursor to add the superpowers workflow skills + hooks. Everything else is a Cursor native (Bugbot, AGENTS.md, Open-VSX LSP extensions); their skill / mcp / hook components are already provisioned here (+ .cursor/rules)."
 

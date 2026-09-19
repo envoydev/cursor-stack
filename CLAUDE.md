@@ -5,7 +5,7 @@
 The single source of truth for the **Cursor** half of a coding-agent setup - not an
 application. It was split out of the Claude stack (`claude-stack`, still the peer repo, renamed
 from `agents-stack`), and is now **fully standalone**: this repo owns the whole Cursor delivery -
-the installers, the 76 vendored skills, the 43 Cursor-contract subagents, the `.mdc` rules, the
+the installers, the 77 vendored skills, the 43 Cursor-contract subagents, the `.mdc` rules, the
 hooks, and the `templates/AGENTS.template.md` base template. The installer downloads THIS repo's
 release archive (clone fallback) to copy `skills/` in, so nothing is fetched from the peer at install. Consuming projects pull from here -
 they do not own their copy; a change made only inside a consuming project is throwaway (see
@@ -18,9 +18,9 @@ Invariants).
   `cursor-stack.html` - the browser inventory.
 - `templates/AGENTS.template.md` - the stack-neutral per-project skeleton each consuming project's
   `AGENTS.md` is filled in from (Cursor reads `AGENTS.md`).
-- `skills/` - the 76 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
+- `skills/` - the 77 vendored Cursor Skills (`agentskills.io`: one dir per skill, each with a
   `SKILL.md`), copied into a project's `.cursor/skills/` out of the run's source snapshot. The
-  19 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
+  20 orchestration skills carry `disable-model-invocation: true` (Cursor honours it for
   repo-level skills: the skill loads only on an explicit `/name`).
 - `agents/` - the 43 Cursor-contract subagents, copied into a project's `.cursor/agents/`.
   Cursor (2.5+) has a Task tool and MCP-inheriting subagents, so they keep the full orchestration

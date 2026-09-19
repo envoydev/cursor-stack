@@ -25,7 +25,19 @@ const hasPwsh = spawnSync('pwsh', ['-v'], { encoding: 'utf8' }).status === 0;
 const skipNoPwsh = hasPwsh ? false : 'pwsh not installed - ps1 behavioral test skipped';
 const TWINS = ['sh', 'ps1'];
 
-const mkTmp = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+// The real (long-name) temp dir: on a Windows runner os.tmpdir() is the 8.3 short form (RUNNER~1),
+// while git and cygpath answer with the long one, so a path built from the short form never matches.
+const mkTmp = (prefix) => fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), prefix));
+
+// A registered db path against the one expected. POSIX: byte-exact. Windows: ONE separator style (a
+// mixed path is the bug the ps1 twin shipped), then compared case-insensitively with '/' - both twins
+// write forward slashes there on purpose (uvx and the server read them), path.join builds '\'.
+function assertDbPath(actual, expected, msg) {
+  if (process.platform !== 'win32') return assert.strictEqual(actual, expected, msg);
+  assert.ok(!(actual.includes('/') && actual.includes('\\')), `${msg}: mixed separators in ${actual}`);
+  const norm = (p) => p.replace(/\\/g, '/').toLowerCase();
+  assert.strictEqual(norm(actual), norm(expected), msg);
+}
 const rmDir = (d) => fs.rmSync(d, { recursive: true, force: true });
 
 // One local clone of this repo's current tree, reused by every test via STACK_SOURCE_REPO. A plain
@@ -83,7 +95,7 @@ for (const twin of TWINS) {
       assert.ok(e1.args.includes('--with') && e1.args.includes('numpy'), `${twin}: --with numpy missing`);
       assert.ok(e1.args.some((a) => a.startsWith('mcp-memory-service[sqlite]')), `${twin}: [sqlite] extra missing: ${e1.args}`);
       assert.strictEqual(e1.env.MCP_MEMORY_STORAGE_BACKEND, 'sqlite_vec', `${twin}: backend`);
-      assert.strictEqual(e1.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory.db'), `${twin}: global path`);
+      assertDbPath(e1.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory.db'), `${twin}: global path`);
       // Native Windows PowerShell legitimately joins with '\\' (Join-Path); only a MIXED separator
       // (both '/' and '\\' in the same path) is ever wrong - so this only asserts on a platform where
       // '\\' can never be a real separator to begin with.
@@ -101,7 +113,7 @@ for (const twin of TWINS) {
     try {
       run(twin, sb, 'install', twin === 'sh' ? ['myspace', 'memory-scoped'] : ['myspace', '-MemoryLevel', 'scoped']);
       const e = memEntry(sb);
-      assert.strictEqual(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_myspace.db'), `${twin}: scoped path`);
+      assertDbPath(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_myspace.db'), `${twin}: scoped path`);
     } finally { sb.rm(); }
   });
 
@@ -112,7 +124,7 @@ for (const twin of TWINS) {
       // as the level and never concatenated into, or mistaken for, the space value.
       run(twin, sb, 'install', twin === 'sh' ? ['someword', 'memory-scoped'] : ['-Space', 'someword', '-MemoryLevel', 'scoped']);
       const e = memEntry(sb);
-      assert.strictEqual(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_someword.db'), `${twin}: space word must win, not the level word`);
+      assertDbPath(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_someword.db'), `${twin}: space word must win, not the level word`);
     } finally { sb.rm(); }
   });
 
@@ -121,7 +133,7 @@ for (const twin of TWINS) {
     try {
       run(twin, sb, 'install', levelArg(twin, 'scoped'));
       const e = memEntry(sb);
-      assert.strictEqual(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_default.db'), `${twin}: default scoped path`);
+      assertDbPath(e.env.MCP_MEMORY_SQLITE_PATH, path.join(sb.home, '.memory-mcp', 'memory_default.db'), `${twin}: default scoped path`);
     } finally { sb.rm(); }
   });
 
@@ -130,7 +142,7 @@ for (const twin of TWINS) {
     try {
       run(twin, sb, 'install', levelArg(twin, 'project'));
       const e = memEntry(sb);
-      assert.strictEqual(e.env.MCP_MEMORY_SQLITE_PATH, path.join(fs.realpathSync(sb.repo), '.memory-mcp', 'memory.db'), `${twin}: project path`);
+      assertDbPath(e.env.MCP_MEMORY_SQLITE_PATH, path.join(fs.realpathSync(sb.repo), '.memory-mcp', 'memory.db'), `${twin}: project path`);
       if (process.platform !== 'win32') assert.ok(!e.env.MCP_MEMORY_SQLITE_PATH.includes('\\'), `${twin}: a literal backslash leaked into the project db path: ${e.env.MCP_MEMORY_SQLITE_PATH}`);
       const gi = fs.readFileSync(path.join(sb.repo, '.memory-mcp', '.gitignore'), 'utf8');
       assert.strictEqual(gi, '*\n', `${twin}: .memory-mcp/.gitignore content`);
@@ -146,7 +158,7 @@ for (const twin of TWINS) {
       if (twin === 'sh') execFileSync('bash', [SH, 'install', ...args], { cwd: wt, encoding: 'utf8', env: sb.env });
       else execFileSync('pwsh', ['-NoProfile', '-File', PS1, 'install', ...args], { cwd: wt, encoding: 'utf8', env: sb.env });
       const entry = JSON.parse(fs.readFileSync(path.join(wt, '.cursor', 'mcp.json'), 'utf8')).mcpServers.memory;
-      assert.strictEqual(entry.env.MCP_MEMORY_SQLITE_PATH, path.join(fs.realpathSync(sb.repo), '.memory-mcp', 'memory.db'), `${twin}: project-level db must live under the MAIN checkout, never the worktree that installed it`);
+      assertDbPath(entry.env.MCP_MEMORY_SQLITE_PATH, path.join(fs.realpathSync(sb.repo), '.memory-mcp', 'memory.db'), `${twin}: project-level db must live under the MAIN checkout, never the worktree that installed it`);
       assert.ok(fs.existsSync(path.join(sb.repo, '.memory-mcp', '.gitignore')), `${twin}: .gitignore must land in the MAIN checkout's .memory-mcp, not the worktree's`);
       assert.ok(!fs.existsSync(path.join(wt, '.memory-mcp')), `${twin}: no .memory-mcp folder should exist inside the worktree itself`);
     } finally { sb.rm(); }

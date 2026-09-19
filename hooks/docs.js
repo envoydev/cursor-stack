@@ -713,6 +713,9 @@ function blobsOf(files) {
   return out;
 }
 const docsRel = () => path.relative(ROOT, DOCS_ROOT).split(path.sep).join('/');
+// Every path this engine PRINTS is project-relative and '/'-separated on every platform - the same form the
+// covers globs and watch roots use, so an answer read on Windows can be pasted back into a ref or a glob.
+const shown = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 
 // Every mainline ref that actually exists here: the local branches, their origin/<name> remote-tracking twins,
 // and origin/HEAD's target. A git-flow repo (work on develop, origin/HEAD -> main) has several of these, and
@@ -878,7 +881,7 @@ function writeInPlace(file, sec, text) {
       resolved.push(name);
     }
   }
-  return { wrote: path.relative(ROOT, file), inPlace: true, added: !own, resolved };
+  return { wrote: shown(file), inPlace: true, added: !own, resolved };
 }
 
 // Parent and child overrides never coexist: a section already served from an ancestor's override lands inside
@@ -887,7 +890,7 @@ function writeInPlace(file, sec, text) {
 function writeOverride(file, sec, text, b) {
   const dir = path.join(BRANCHES, safe(b));
   const owner = overlayOwner(dir);
-  if (owner && owner !== b) return { error: `${path.relative(ROOT, dir)} holds ${owner}'s doc versions, not ${b}'s (both names fold onto one directory) - rename one branch, or promote/prune ${owner} first` };
+  if (owner && owner !== b) return { error: `${shown(dir)} holds ${owner}'s doc versions, not ${b}'s (both names fold onto one directory) - rename one branch, or promote/prune ${owner} first` };
   const current = sections(file);
   const hit = current.find((s) => s.id === `${key(file)}#${sec}`);
   if (hit && hit.overrideOf && hit.overrideOf !== sec) {
@@ -898,7 +901,7 @@ function writeOverride(file, sec, text, b) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, `${norm(spliced.join('\n'))}\n`);
     writeBaseMeta(dir, b);
-    return { wrote: path.relative(ROOT, target), base: path.relative(ROOT, base), into: hit.overrideOf };
+    return { wrote: shown(target), base: shown(base), into: hit.overrideOf };
   }
   const mainlineForDrop = parse(file, fs.readFileSync(file, 'utf8'));
   const dropParent = mainlineForDrop.find((s) => s.id === `${key(file)}#${sec}`);
@@ -922,7 +925,7 @@ function writeOverride(file, sec, text, b) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${norm(text)}\n`);
   writeBaseMeta(dir, b);
-  return { wrote: path.relative(ROOT, target), base: path.relative(ROOT, base) };
+  return { wrote: shown(target), base: shown(base) };
 }
 
 function allSections() {
@@ -1008,10 +1011,10 @@ function show(ref) {
   const secs = sections(file);
   const hit = secs.find((s) => s.id === `${key(file)}#${sec}`) || secs.find((s) => slug(s.heading).startsWith(sec));
   if (!hit) return `no section ${sec} in ${fileKey}.\n${toc(fileKey)}`;
-  const body = hit.chars > SHOW_CHARS ? `${hit.text.slice(0, SHOW_CHARS)}\n... (${hit.chars - SHOW_CHARS} more chars; open ${path.relative(ROOT, hit.from)} for the rest)` : hit.text;
+  const body = hit.chars > SHOW_CHARS ? `${hit.text.slice(0, SHOW_CHARS)}\n... (${hit.chars - SHOW_CHARS} more chars; open ${shown(hit.from)} for the rest)` : hit.text;
   const where = hit.overrideOf
-    ? `${path.relative(ROOT, hit.from)} (this branch's version of ${key(file)}#${hit.overrideOf}${hit.conflict ? ' - CONFLICT: mainline changed the same lines; `docs.js show ' + key(file) + '#' + hit.overrideOf + ' --conflict` shows both' : ''}${hit.orphan ? ' - mainline removed this section' : ''})`
-    : `${path.relative(ROOT, hit.from)} line ${hit.start + 1}`;
+    ? `${shown(hit.from)} (this branch's version of ${key(file)}#${hit.overrideOf}${hit.conflict ? ' - CONFLICT: mainline changed the same lines; `docs.js show ' + key(file) + '#' + hit.overrideOf + ' --conflict` shows both' : ''}${hit.orphan ? ' - mainline removed this section' : ''})`
+    : `${shown(hit.from)} line ${hit.start + 1}`;
   const outgrown = outgrownFiles(hit);
   const warn = outgrown.length ? `\nOUTGROWN: ${outgrown.length} file(s) it covers changed since it was written (${outgrown.slice(0, 3).join(', ')}) - the code wins.` : '';
   return `${where}${warn}\n\n${body}`;
@@ -1116,7 +1119,7 @@ function promote(name) {
   // records a DIFFERENT branch, would fold one branch's decisions into mainline under the other's name.
   const owner = overlayOwner(dir);
   if (owner && owner !== name && branchTips().has(name)) {
-    return { error: `${path.relative(ROOT, dir)} holds ${owner}'s doc versions, not ${name}'s (both names fold onto one directory) - promote ${owner} instead` };
+    return { error: `${shown(dir)} holds ${owner}'s doc versions, not ${name}'s (both names fold onto one directory) - promote ${owner} instead` };
   }
   const release = takeLock();
   if (!release) return { results: [], removed: false, changed: false, locked: true };
@@ -1187,7 +1190,7 @@ function promoteLocked(name, dir) {
       // hits this same check forever. Reported on its own, with advice that can actually be followed.
       const orphan = notOwnedOverride(dir, over);
       flagConflict(orphan
-        ? `${orphan.target} is declared notOwned by ${orphan.domain}/watch.json - this override will never be folded automatically, however many times promote runs; recover its text by hand from ${path.relative(ROOT, over)} and hand it to whatever now owns ${orphan.target}, then 'docs.js prune ${name}' once you no longer need this branch's copy`
+        ? `${orphan.target} is declared notOwned by ${orphan.domain}/watch.json - this override will never be folded automatically, however many times promote runs; recover its text by hand from ${shown(over)} and hand it to whatever now owns ${orphan.target}, then 'docs.js prune ${name}' once you no longer need this branch's copy`
         : 'its overlay path does not resolve to a file any domain in this install owns - an overlay from before domains existed with no matching architecture file, one whose domain moved, or one nested deeper than a domain keeps its own files; nothing was folded or removed - move the text under the right domain by hand, then promote again', '');
       continue;
     }
@@ -1409,7 +1412,7 @@ function lint() {
     // lost, promote's own refusal (with working advice) is what actually stops the fold.
     for (const over of overrideFiles(dir)) {
       const orphan = notOwnedOverride(dir, over);
-      if (orphan) notes.push(`this branch overrides a section of ${orphan.target}, which ${orphan.domain}/watch.json now declares notOwned - it will never fold; recover it by hand from ${path.relative(ROOT, over)}`);
+      if (orphan) notes.push(`this branch overrides a section of ${orphan.target}, which ${orphan.domain}/watch.json now declares notOwned - it will never fold; recover it by hand from ${shown(over)}`);
     }
     const st = status();
     for (const id of st.conflicts) problems.push(`this branch's version of ${id} conflicts with mainline's newer text - docs.js show ${id} --conflict`);
@@ -1652,7 +1655,7 @@ const commands = {
     const hits = where(args);
     console.log(hits.length ? hits.map((s) => `${s.id} - ${s.heading} (${s.chars} chars)`).join('\n') : 'no section matches those paths');
   },
-  files: () => console.log(docFiles().map((f) => `${key(f)}  ${path.relative(ROOT, f)} (${fs.statSync(f).size} chars, ${sections(f).length} sections${isHistory(f) ? ', history' : ''})`).join('\n')),
+  files: () => console.log(docFiles().map((f) => `${key(f)}  ${shown(f)} (${fs.statSync(f).size} chars, ${sections(f).length} sections${isHistory(f) ? ', history' : ''})`).join('\n')),
   stale: () => {
     const rows = stale();
     console.log(rows.length ? rows.map((r) => `${r.s.id} - ${r.files.length} covered file(s) changed since ${r.s.stamp}: ${r.files.slice(0, 3).join(', ')}`).join('\n') : 'no section has been outgrown');

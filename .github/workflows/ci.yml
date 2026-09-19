@@ -122,7 +122,11 @@ jobs:
           # Hooks count DISTINCT files, not manifest lines: a hook wired to two events is listed
           # once per event but copied once (guard-read-whole-file is on beforeReadFile and
           # beforeShellExecution), so a line count would over-expect and go red on a correct tree.
-          test "$hooks"  = "$(awk '/^CURSOR_HOOKS=\(/,/^\)/'  "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | sed -n 's/^  "\([^:"]*\).*/\1/p' | sort -u | wc -l | tr -d ' ')"
+          # The engines a wired hook require()s beside itself (docs.js, memory.js) are copied too
+          # and never wired, so they are added from the hooks' own require lines, not hardcoded.
+          wired=$(awk '/^CURSOR_HOOKS=\(/,/^\)/' "$GITHUB_WORKSPACE/scripts/cursor-stack.sh" | sed -n 's/^  "\([^:"]*\).*/\1/p' | sort -u)
+          engines=$(for h in $wired; do grep -o "require('\./[^']*')" "$GITHUB_WORKSPACE/hooks/$h" || true; done | sed "s|require('\./\(.*\)')|\1|")
+          test "$hooks"  = "$(printf '%s\n' $wired $engines | sort -u | wc -l | tr -d ' ')"
 
           # The stamp must name the commit actually installed - not a stale or invented one.
           grep -q "^source_commit=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)$" "$proj/.cursor/cursor-stack.stamp"

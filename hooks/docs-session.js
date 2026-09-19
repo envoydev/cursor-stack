@@ -162,7 +162,7 @@ function toolPaths(input, root) {
       if (/[\w.-]\/[\w.-]/.test(w)) out.push(w.replace(/^[^\w./~-]+|[,:]+$/g, '').replace(/:\d+(:\d+)?$/, ''));
     }
   }
-  return [...new Set(out.map((p) => path.relative(root, path.resolve(root, p))).filter((p) => p && !p.startsWith('..')))];
+  return [...new Set(out.map((p) => path.relative(root, path.resolve(root, p)).split(path.sep).join('/')).filter((p) => p && !p.startsWith('..')))];
 }
 
 // The paths a shell command WRITES, not every path it mentions: redirect targets (never /dev/null or a file
@@ -198,7 +198,9 @@ function writeTargets(command) {
   }
   return [...new Set(out.filter((t) => t && t !== 'QUOTED'))];
 }
-const relative = (root, paths) => [...new Set(paths.map((p) => path.relative(root, path.resolve(root, p.replace(/^['"]|['"]$/g, '')))).filter((p) => p && !p.startsWith('..')))];
+// Always '/'-separated: every consumer (the watch roots, the covers globs, the log) is written with '/', and
+// path.relative answers with '\' on Windows, where a native separator here silently disarmed the gate.
+const relative = (root, paths) => [...new Set(paths.map((p) => path.relative(root, path.resolve(root, p.replace(/^['"]|['"]$/g, ''))).split(path.sep).join('/')).filter((p) => p && !p.startsWith('..')))];
 
 // Only reading a section's text is a consult: `where`, `toc` and listings point at sections without reading them.
 // `docRoots` is a LIST now, one entry per domain (each domain's own root, project-relative) - a project can be

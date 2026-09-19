@@ -229,7 +229,9 @@ $ConfigDir = Join-Path $HOME '.cursor'
 # Shared memory root - always resolved at install time, and deliberately outside the project so
 # recall carries across every project installed into. Reused both for the ${HOME_MEMORY_DIR} token
 # substitution below and for Get-MemoryLevelOf's own level detection.
-$HomeMemoryDir = Join-Path $HOME '.memory-mcp'
+# Forward slashes, like every db path this script builds: Join-Path answers with '\' on native Windows,
+# and the '/memory.db' appended to it later would otherwise leave a mixed path.
+$HomeMemoryDir = (Join-Path $HOME '.memory-mcp') -replace '\\', '/'
 
 $SerenaCtx = 'ide-assistant'   # serena's --context for Cursor (generic ide-assistant)
 

@@ -193,7 +193,11 @@ SERENA_CTX="ide-assistant"   # serena's --context for Cursor (generic ide-assist
 
 # Shared memory root - always resolved at install time, and deliberately outside the project so
 # recall carries across every project installed into.
-HOME_MEMORY_DIR="$HOME/.memory-mcp"
+# Git Bash / Cygwin on Windows: $HOME and git answer in POSIX form (/tmp/..., /c/...), which the native
+# uvx/python server cannot open. `cygpath -m` gives C:/... - drive letter, forward slashes, one style.
+# Everywhere else the path is already native and passes through untouched.
+_native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
+HOME_MEMORY_DIR="$(_native_path "$HOME/.memory-mcp")"
 
 if [ "$SCOPE" = "project" ]; then
   cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
@@ -215,7 +219,7 @@ _main_checkout_root() {
   fi
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
-MEMORY_PROJECT_ROOT="$(_main_checkout_root)"
+MEMORY_PROJECT_ROOT="$(_native_path "$(_main_checkout_root)")"
 
 # ===========================================================================
 # MANIFEST - edit these, then run.
@@ -710,20 +714,22 @@ set_cursor_mcps() {
   done
 
   local prog; prog=$(cat <<'PY'
-import json, os, sys
+import json, os, posixpath, sys
 path, action, sentry_auth, pw_browsers, pw_enabled, mem_level, home_memory_dir, memory_project_root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8]
 
 # The level name for a db path this run did NOT just build - the inverse of the case statement above
 # (scoped/project/default) that built MEMORY_DB_PATH, for the ONE log line below. 'custom' covers
 # anything else: a hand-edited path, or one written before this feature existed.
+# posixpath, not os.path: every db path this script builds is '/'-joined, and a native Windows python
+# would join with '\' and never recognise its own path.
 def _memory_level_of(p):
     if not p:
         return "custom"
-    if p == os.path.join(home_memory_dir, "memory.db"):
+    if p == posixpath.join(home_memory_dir, "memory.db"):
         return "global"
-    if os.path.dirname(p) == home_memory_dir and os.path.basename(p).startswith("memory_") and os.path.basename(p).endswith(".db"):
+    if posixpath.dirname(p) == home_memory_dir and posixpath.basename(p).startswith("memory_") and posixpath.basename(p).endswith(".db"):
         return "scoped"
-    if p == os.path.join(memory_project_root, ".memory-mcp", "memory.db"):
+    if p == posixpath.join(memory_project_root, ".memory-mcp", "memory.db"):
         return "project"
     return "custom"
 # Refuse a file that parses to the wrong shape rather than falling back to {} - that would REPLACE

@@ -1465,13 +1465,22 @@ const notOwnedOf = (domain) => (domain === 'architecture' ? [...new Set(['ORIENT
 // spelling gets today even though the domain-qualified spelling of the SAME file gets the true refusal.
 // Checked across every domain's notOwnedOf, in the layouts domainFiles itself reads a file under (root,
 // references/, history/) when fileKey names no subfolder of its own.
+// The file must also EXIST - the same check protectedRef makes, for the same reason. A notOwned list
+// is a GLOB list, and a domain is free to declare a catch-all: `decisions/watch.json` ships
+// `notOwned: ["**.md"]`, because ADR filenames are unbounded and a name-by-name list goes stale. A
+// glob that broad matches any name at all, so without this check every bare ref that resolved no
+// domain - a typo of a real doc, a file that was never written - came back 'is maintained by another
+// skill' instead of 'no such doc file', from the FIRST domain whose glob happened to match. The
+// domain-QUALIFIED spelling deliberately keeps claiming a file that does not exist (set's first
+// branch): there the caller named the protected domain itself, so 'this engine does not write it' is
+// the true answer to 'create an ADR here', not a diagnosis of a missing file.
 function notOwnedMatch(fileKey) {
   const stripped = stripMd(fileKey);
   const candidates = stripped.includes('/') ? [stripped] : [stripped, `references/${stripped}`, `history/${stripped}`];
   for (const d of domains()) {
     for (const c of candidates) {
       const target = `${c}.md`;
-      if (matches(notOwnedOf(d), target)) return { domain: d, file: target };
+      if (matches(notOwnedOf(d), target) && fs.existsSync(path.join(domainDir(d), target))) return { domain: d, file: target };
     }
   }
   return null;

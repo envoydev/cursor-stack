@@ -1184,6 +1184,41 @@ test('a domain declares notOwned files the engine never writes, bare or qualifie
   } finally { r.rm(); }
 });
 
+// notOwnedMatch matched a GLOB against a bare name without ever asking whether that file exists. A
+// decisions domain ships `notOwned: ["**.md"]` - the catch-all spelling its own doc-shape reference
+// pins, because ADR filenames are unbounded - and that glob matches ANY bare name, so every ref that
+// resolved no domain came back 'is maintained by another skill' instead of 'no such doc file'. Two
+// costs: `set` and `show` gave contradictory answers about the same missing file in one run, and a typo
+// of a real doc name ('ARCHITECTUR#modules') was reported protected rather than missing - which tells a
+// writer to stop instead of retrying the spelling, silently dropping the rewrite a finish ask had just
+// asked for. A notOwned file is one domainFiles EXCLUDED, so it exists on disk by definition;
+// requiring that is what keeps the refusal to the files it was written for.
+test('a catch-all notOwned glob never claims a file that does not exist - the bare ref still says no such doc file', () => {
+  const r = repo({ docs: { 'ARCHITECTURE.md': section('modules', '', 'One module per feature.') } });
+  try {
+    r.write('.claude/docs/decisions/0001-refunds.md', section('refunds', '', 'Refunds stay synchronous.'));
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({ notOwned: ['**.md'] }));
+    for (const ref of ['NOSUCHFILE#x', 'ARCHITECTUR#modules', 'NOSUCHFILE.md#x']) {
+      const out = r.cli(['set', ref], 'text\n');
+      assert.notStrictEqual(out.status, 0, `${ref} should still be refused: ${out.stdout}`);
+      assert.match(out.stdout, /no such doc file/, `${ref} is missing, not protected: ${out.stdout}`);
+      assert.doesNotMatch(out.stdout, /maintained by another skill/, `${ref} must not be reported as protected`);
+    }
+    // the same run's `show` agrees, which is the inconsistency this exists to stop
+    assert.match(r.cli(['show', 'NOSUCHFILE#x']).stdout, /no such doc file/, 'show and set must give one answer');
+    // and the protection itself is untouched: the file that DOES exist is still refused, every spelling
+    for (const ref of ['0001-refunds#refunds', 'decisions/0001-refunds#refunds', '0001-refunds.md#refunds']) {
+      const out = r.cli(['set', ref], 'QUEUE THEM NOW\n');
+      assert.notStrictEqual(out.status, 0, `${ref}: ${out.stdout}`);
+      assert.match(out.stdout, /maintained by another skill - this engine does not write it/, ref);
+    }
+    assert.doesNotMatch(r.read('.claude/docs/decisions/0001-refunds.md'), /QUEUE THEM NOW/, 'the decision was never written');
+    // a domain-QUALIFIED ref into the protected domain still refuses whether or not the file exists:
+    // there the caller named the domain, so 'this engine does not write it' answers the real question.
+    assert.match(r.cli(['set', 'decisions/0002-new-adr#x'], 'a new ADR\n').stdout, /maintained by another skill/, 'creating an ADR through the engine stays refused');
+  } finally { r.rm(); }
+});
+
 test('ORIENTATION.md stays refused under the notOwned mechanism, with no notOwned entry declared for it', () => {
   const r = repo({ docs: { 'references/patterns.md': PATTERNS } });
   try {

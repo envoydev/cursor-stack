@@ -360,16 +360,18 @@ $MemoryPragmas = 'busy_timeout=15000'
 # $MemoryLevel is '' when the run named no level word - Set-CursorMcps keeps an existing registration's
 # MCP_MEMORY_SQLITE_PATH byte-for-byte in that case and only upgrades the rest of the entry; the path
 # built here is only what a FRESH (nothing registered yet) install actually gets, and it defaults to
-# global exactly like an explicit 'global' would. Windows path separator on purpose for the home-rooted
-# forms: ${HOME_MEMORY_DIR} resolves via Join-Path to a backslashed root, so the file joins with '\'
-# too - instead of the mixed '...\.memory-mcp/memory.db' (JSON serialization escapes it automatically).
-# The project form keeps forward slashes like every other ${CLAUDE_PROJECT_DIR:-.}-relative entry
-# (playwright, above) - Cursor/uvx accept them on Windows too.
+# global exactly like an explicit 'global' would. Forward slash throughout, including the home-rooted
+# forms: ${HOME_MEMORY_DIR} resolves via Join-Path, which on pwsh/macOS and pwsh/Linux (both a supported
+# twin target, not just native Windows PowerShell) joins with '/' - a literal '\' appended after it then
+# produces a MIXED, broken path ('....memory-mcp\memory.db', not a real directory separator on either
+# platform). The project form already proved forward slashes read fine on native Windows PowerShell too
+# (Cursor/uvx accept them there), so every form uses them - one separator, both platforms, no Join-Path
+# platform-detection needed here.
 $MemorySpaceFile = if ($Space) { "memory_$Space.db" } else { 'memory_default.db' }
 $MemoryDbPath = switch ($MemoryLevel) {
-  'scoped'  { '${HOME_MEMORY_DIR}\' + $MemorySpaceFile }
+  'scoped'  { '${HOME_MEMORY_DIR}/' + $MemorySpaceFile }
   'project' { '${CLAUDE_PROJECT_DIR:-.}/.memory-mcp/memory.db' }
-  default   { '${HOME_MEMORY_DIR}\memory.db' }
+  default   { '${HOME_MEMORY_DIR}/memory.db' }
 }
 $MemoryEntry = 'memory|-e MCP_MEMORY_STORAGE_BACKEND=' + $MemoryBackend +
                ' -e MCP_MEMORY_SQLITE_PATH=' + $MemoryDbPath +

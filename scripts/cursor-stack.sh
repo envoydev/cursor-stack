@@ -631,11 +631,23 @@ set_cursor_mcps() {
   done
 
   local prog; prog=$(cat <<'PY'
-import json, sys
+import json, os, sys
 path, action, sentry_auth, pw_browsers, pw_enabled = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5]
-try:
-    data = json.load(open(path))
-except Exception:
+# Refuse a file that parses to the wrong shape rather than falling back to {} - that would REPLACE
+# whatever the project already has in mcp.json with just the stack's own servers. An array, string,
+# number or boolean all parse fine, and data.setdefault below would then throw on any of them
+# (AttributeError or TypeError, depending on the shape) - isinstance is checked up front instead so the
+# failure is one clear line, not a traceback.
+if os.path.exists(path):
+    try:
+        data = json.load(open(path))
+    except Exception as exc:
+        print("  !! mcp.json is not valid JSON (%s) - left untouched; fix it and re-run" % exc)
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print("  !! mcp.json top level is not an object - left untouched")
+        sys.exit(1)
+else:
     data = {}
 servers = data.setdefault("mcpServers", {})
 # playwright: a server drives ONE browser, fixed at launch (`--browser`; no runtime switch), so the
@@ -818,11 +830,21 @@ set_cursor_hooks() {
   esac
 
   local prog; prog=$(cat <<'PY'
-import json, sys
+import json, os, sys
 path = sys.argv[1]
-try:
-    data = json.load(open(path))
-except Exception:
+# Same refusal as mcp.json's own guard: a wrong-shape file must not be silently replaced with {}, and
+# an array/string/number/boolean all parse but would otherwise throw on "version" not in data or the
+# item-assignment right after it - isinstance is checked up front for one clear line instead.
+if os.path.exists(path):
+    try:
+        data = json.load(open(path))
+    except Exception as exc:
+        print("  !! hooks.json is not valid JSON (%s) - left untouched; fix it and re-run" % exc)
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print("  !! hooks.json top level is not an object - left untouched")
+        sys.exit(1)
+else:
     data = {}
 if "version" not in data:
     data["version"] = 1

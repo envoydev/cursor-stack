@@ -719,7 +719,22 @@ function Set-CursorMcps {
   $dir = Split-Path -Parent $mcpPath
   if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-  $data = if (Test-Path -LiteralPath $mcpPath) { Get-Content -LiteralPath $mcpPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+  $data = [pscustomobject]@{}
+  if (Test-Path -LiteralPath $mcpPath) {
+    $parsed = $true
+    try { $data = Get-Content -LiteralPath $mcpPath -Raw | ConvertFrom-Json } catch { $parsed = $false }
+    if (-not $parsed) { Log '  !! mcp.json is not valid JSON - left untouched; fix it and re-run'; return }
+    # A JSON array, string, number, boolean or `null` all PARSE but none is an mcpServers object, and
+    # every Add-Member below would then run per array ELEMENT (or against a scalar with no
+    # PSObject.Properties at all) instead of against the file. Tested by the .NET type, never
+    # `-is [pscustomobject]`: PowerShell wraps a plain scalar in a PSObject, so that operator answers
+    # True for a String, an Int64 and a Boolean alike - only an array (or $null) would fail it, letting
+    # the other three shapes through to throw mid-merge and abort the run before Move-DocsDomains runs.
+    if ($null -eq $data -or $data.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') {
+      Log '  !! mcp.json top level is not an object - left untouched'
+      return
+    }
+  }
   if (-not $data.PSObject.Properties['mcpServers']) { $data | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) }
 
   $projDir = if ($root) { $root } else { (Get-Location).Path }
@@ -893,7 +908,20 @@ function Set-CursorHooks {
   $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
   $nodeExe = if ($nodeCmd) { $nodeCmd.Source } else { 'node' }
 
-  $data = if (Test-Path -LiteralPath $hooksJson) { Get-Content -LiteralPath $hooksJson -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+  $data = [pscustomobject]@{}
+  if (Test-Path -LiteralPath $hooksJson) {
+    $parsed = $true
+    try { $data = Get-Content -LiteralPath $hooksJson -Raw | ConvertFrom-Json } catch { $parsed = $false }
+    if (-not $parsed) { Log '  !! hooks.json is not valid JSON - left untouched; fix it and re-run'; return }
+    # Same hole as mcp.json above: an array, string, number, boolean or `null` all parse but none is a
+    # hooks object, and the Add-Member calls below would run per element or against a property-less
+    # scalar and abort the run (ErrorActionPreference is Stop) before Move-DocsDomains runs. Tested by
+    # the .NET type, never `-is [pscustomobject]` (see the mcp.json check for why).
+    if ($null -eq $data -or $data.GetType().FullName -ne 'System.Management.Automation.PSCustomObject') {
+      Log '  !! hooks.json top level is not an object - left untouched'
+      return
+    }
+  }
   if (-not $data.PSObject.Properties['version']) { $data | Add-Member -NotePropertyName version -NotePropertyValue 1 }
   if (-not $data.PSObject.Properties['hooks']) { $data | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
 

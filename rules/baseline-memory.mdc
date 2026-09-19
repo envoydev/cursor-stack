@@ -1,0 +1,33 @@
+---
+description: House baseline - what belongs in shared memory.
+globs:
+alwaysApply: true
+---
+
+# Shared memory
+
+## What memory is for
+
+Project truth lives in the docs domains (`baseline-docs-root.mdc` names the root); memory holds what
+they do not - preferences, corrections, lessons. It is shared across accounts, not a second copy of a
+project's documented facts.
+
+## What to save
+
+- The user corrects you, states a preference, or you learn a project fact no docs domain holds: save
+  it with `memory_store`, `metadata.type` set to `preference_signal` (preference), `user_correction`
+  (correction), or `reference` (project fact). Tag `project:<name>` (the repo's folder name) - a
+  preference true in every project carries none.
+- A dispatched subagent saves only a lesson worth keeping past its own task - a build quirk, a fix
+  that worked, a trap - typed `learning` (lesson), tagged `agent:<agent-name>` and `project:<name>`.
+  Task progress and handoffs go to serena's memory, never here.
+
+## Before you ask or read
+
+- Search with `memory_search` before asking the user something they may already have told you.
+- Search by a related project's name before reading that project's repo.
+
+## Tools
+
+`memory_store`, `memory_search`, `memory_list` - the memory MCP's tools, available like any other
+connected server's.

@@ -455,9 +455,9 @@ function main()
         const sh = new Set(parseStringArray(CURSOR_SH, '"', shBlock));
         const ps1 = new Set(parseStringArray(CURSOR_PS1, "'", ps1Block));
         assertSameSet(what, { 'cursor-stack.sh': sh, 'cursor-stack.ps1': ps1 });
-        // docs.js is the docs-session hook's engine, copied beside it but never itself wired to an
-        // event - it exists on disk without a CURSOR_HOOKS entry, on purpose.
-        const disk = what === 'hook' ? new Set([...diskSet(dir, ext)].filter((f) => f !== 'docs.js')) : diskSet(dir, ext);
+        // docs.js and memory.js are their sessionStart hooks' engines, copied beside them but never
+        // themselves wired to an event - they exist on disk without a CURSOR_HOOKS entry, on purpose.
+        const disk = what === 'hook' ? new Set([...diskSet(dir, ext)].filter((f) => f !== 'docs.js' && f !== 'memory.js')) : diskSet(dir, ext);
         assertSameSet(`${what} file`, { [diskLabel]: disk, [`cursor-stack.sh ${shBlock.replace(/[=(]+$/, '')}`]: sh });
         arrayCounts[what] = sh.size;
     }

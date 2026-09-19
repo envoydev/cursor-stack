@@ -756,7 +756,11 @@ json.dump(data, open(path, "w"), indent=2); open(path, "a").write("\n")
 print("  cursor mcp.json -> " + path)
 PY
 )
-  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED"
+  # The guard above prints its own specific diagnosis and exits 1 on a bad shape; this tail is what
+  # keeps that exit from taking the whole install down under `set -euo pipefail` - without it the
+  # pipeline's failure aborts the script here, before migrate_docs_domains ever runs, which is the
+  # exact bug this fix removes.
+  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED" || log "  !! mcp.json wiring failed - left untouched"
   ensure_playwright_browser "$mcp_path"
 }
 
@@ -765,9 +769,16 @@ PY
 # server's pinned @playwright/mcp> playwright`), so the build matches the version Cursor launches. Fail-soft.
 ensure_playwright_browser() {
   local pkg engine
+  # Fail-soft against a malformed mcp.json too: the guard above may have left the file genuinely
+  # untouched (bad JSON, or parsed to a non-object), and this reads that SAME file straight off disk
+  # again rather than the already-guarded in-memory value - without its own try/except a crash here
+  # would abort the whole install the same way the guard above was just fixed to stop doing.
   python3 -c '
 import json, sys
-s = json.load(open(sys.argv[1])).get("mcpServers") or {}
+try:
+    s = json.load(open(sys.argv[1])).get("mcpServers") or {}
+except Exception:
+    s = {}
 for e in ("firefox", "webkit"):
     a = (s.get("playwright-" + e) or {}).get("args") or []
     pkg = next((x for x in a if x.startswith("@playwright/mcp")), "")
@@ -865,7 +876,9 @@ else:
     print("  cursor hooks.json: already wired - unchanged")
 PY
 )
-  printf '%s\n' ${pairs[@]+"${pairs[@]}"} | python3 -c "$prog" "$hooks_json"
+  # Same tail as set_cursor_mcps' guard, for the same reason: without it a bad hooks.json aborts the
+  # whole install under `set -euo pipefail` instead of leaving the file untouched and continuing.
+  printf '%s\n' ${pairs[@]+"${pairs[@]}"} | python3 -c "$prog" "$hooks_json" || log "  !! hooks.json wiring failed - left untouched"
 }
 
 install_cursor_rules() {

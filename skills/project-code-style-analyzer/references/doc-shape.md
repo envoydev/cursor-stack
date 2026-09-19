@@ -91,6 +91,12 @@ under a language's globs makes the session hook ask whether that language's sect
 `decisions/` (a domain a person alone writes, which only warns, never asks), code style gets the
 ordinary finish ask, because this domain is written by this skill and a re-run can act on the answer.
 
+**Written on every run, first capture and re-run alike, from that run's DETECT.** An existing `{}` declares
+nothing - the stack installer writes one when it finds `CODE-STYLE.md` in a folder with no `watch.json`, only so
+the engine reads the folder - and is REPLACED by the real entries, never kept as if it were this capture's
+answer. A populated one is reconciled like the doc: an entry per language DETECT still finds, a dropped
+language's entry removed.
+
 ## Write mechanics
 
 Same mechanics as every non-protected domain, restated so a re-run never has to guess: create

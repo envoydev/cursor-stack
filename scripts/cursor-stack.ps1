@@ -1054,6 +1054,23 @@ function Move-DocsFile {
   Log "  docs migration ($Label): $(Split-Path -Leaf $OldPath) -> $NewPath"
 }
 
+function Enable-DocsDomain {
+  # ABSENT-ONLY: when the capture doc exists and the folder holds no watch.json (nor a dangling link by
+  # that name), writes the minimal '{}' that makes the folder a domain the docs engine reads while
+  # declaring nothing - no source root, no watch entry, no notOwned; the capture fills in the real
+  # entries on its next run. A failed write is logged, never thrown. Twin of the .sh _enable_docs_domain.
+  param([string]$Dir, [string]$Doc, [string]$Label)
+  $watch = Join-Path $Dir 'watch.json'
+  if (-not (Test-Path -LiteralPath (Join-Path $Dir $Doc) -PathType Leaf)) { return }
+  if ((Test-Path -LiteralPath $watch) -or (Get-Item -LiteralPath $watch -Force -ErrorAction SilentlyContinue)) { return }
+  try {
+    [System.IO.File]::WriteAllText($watch, "{}`n")
+    Log "  docs domain ($Label): wrote an empty $(Split-Path -Leaf $Dir)/watch.json - the docs engine now reads this folder; the next capture run fills in its entries"
+  } catch {
+    Log "  !! docs domain ($Label): could not write $watch - the docs engine will not read this folder until a capture writes one"
+  }
+}
+
 function Move-DocsDomains {
   # INSTALL + UPDATE: three absent-only moves onto the docs-domain layout - a file a capture used to
   # write at the OLD path now writes at the NEW one, so an existing install's file is relocated once,
@@ -1070,6 +1087,12 @@ function Move-DocsDomains {
   Move-DocsFile -OldPath (Join-Path $base 'PROJECT-CODE-STYLE.md') -NewPath (Join-Path $base 'code-style/CODE-STYLE.md') -Label 'code style'
   Move-DocsFile -OldPath (Join-Path $base 'architecture/ASSESSMENT.md') -NewPath (Join-Path $base 'quality/ASSESSMENT.md') -Label 'architecture quality'
   Move-DocsFile -OldPath (Join-Path $base 'related-context/PROJECT-RELATED-CONTEXT.md') -NewPath (Join-Path $base 'related-projects/RELATED-PROJECTS.md') -Label 'related projects'
+  # A moved folder is invisible to the docs engine until it holds a watch.json. Keyed on the doc sitting at
+  # its NEW path, not on this run having moved it, so an install an earlier run migrated is switched on too.
+  # Only these two: quality/ and related-context/ carry no watch.json BY DESIGN - one there would make
+  # either a domain silently.
+  Enable-DocsDomain -Dir (Join-Path $base 'code-style') -Doc 'CODE-STYLE.md' -Label 'code style'
+  Enable-DocsDomain -Dir (Join-Path $base 'related-projects') -Doc 'RELATED-PROJECTS.md' -Label 'related projects'
 }
 
 function Install-CursorAgents {

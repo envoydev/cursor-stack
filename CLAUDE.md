@@ -49,8 +49,9 @@ Invariants).
   per-entry matcher + `stop`) makes every docs DOMAIN (a top-level folder under the docs root holding a
   `watch.json`, plus the grandfathered `architecture/`) the start of a session and keeps them honest
   at its end. HOW those docs are versioned is a `CURSOR_DOCS_VERSIONING` choice in the OS/user
-  environment, never a guess from git (absent, it falls back to detecting whether the docs are
-  committed, same as before this key existed): `git` means git versions the docs per branch, `local`
+  environment, never a guess from git (absent, the engine resolves `local` only when the docs are kept
+  out of git - a domain exists and none is tracked, or the docs root is git-ignored - and `git` otherwise,
+  a fresh project included; the installer seeds no value): `git` means git versions the docs per branch, `local`
   means the `.branches/` overlay. The setting WINS over what the repo does, and a disagreement is
   reported by `docs.js status` and the `sessionStart` block rather than resolved the other way. It
   folds a merged branch's doc versions into mainline and pushes orientation, this branch's

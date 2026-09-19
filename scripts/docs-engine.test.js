@@ -199,7 +199,8 @@ test('a committed docs root holding no domain at all is no fact to disagree with
   } finally { r.rm(); }
 });
 
-// Every install made before the key existed carries no value, and nothing may change under it until someone is asked.
+// Every install made before the key existed carries no value: one whose docs exist keeps the mode git's facts gave it,
+// and a value that is neither git nor local counts as absent.
 test('absent, empty or unknown versioning falls back to what git tracks, and nothing is called a mismatch', () => {
   const ignored = repo({ docs: { 'references/patterns.md': PATTERNS } });
   const committed = repo({ tracked: true, docs: { 'references/patterns.md': PATTERNS } });
@@ -214,6 +215,52 @@ test('absent, empty or unknown versioning falls back to what git tracks, and not
     }
     assert.match(ignored.cli(['status'], undefined, { CURSOR_DOCS_VERSIONING: ' GIT ' }).stdout, /^mode: git \(declared/m, 'the value is trimmed and read case-insensitively');
   } finally { ignored.rm(); committed.rm(); }
+});
+
+// The versioning RULE when nothing is declared, as ONE table read through every reader of the engine's one resolver
+// (this installer seeds no value, so the engine is the rule's only home): the mode line `status` prints, the
+// `versioning` field the session hook reads off status(), and - where a doc exists - where a feature-branch write
+// actually lands. 'local' only when the docs are kept out of git (a domain exists and none is tracked, or git
+// ignores the docs root); 'git' otherwise, the fresh project included. A declared value wins in both directions,
+// and without a repo the answer stays 'none'.
+test('undeclared versioning is local only when the docs are kept out of git - one table, every reader', () => {
+  const docs = { 'references/patterns.md': PATTERNS };
+  const withFile = (r, rel, text) => { r.write(rel, text); return r; };
+  const DECLARED = /declared by CURSOR_DOCS_VERSIONING/;
+  const rows = [
+    { name: 'fresh project, docs root not ignored', make: () => repo({ tracked: true }), mode: 'git', why: /no docs domain yet, and git does not ignore the docs root/ },
+    // The docs root does not exist yet, and `.claude/docs/` is a folder-only pattern: the probe must still see it.
+    { name: 'fresh project, docs root ignored by a folder pattern', make: () => repo(), mode: 'overlay', why: /docs are ignored by git/ },
+    { name: 'fresh project, a parent folder ignored', make: () => repo({ tracked: true, files: { '.gitignore': '.claude\n' } }), mode: 'overlay', why: /docs are ignored by git/ },
+    { name: 'committed docs', make: () => repo({ tracked: true, docs }), mode: 'git', why: /docs are committed/, write: 'in place' },
+    { name: 'a domain exists, none tracked, root not ignored', make: () => withFile(repo({ tracked: true }), '.claude/docs/architecture/references/patterns.md', PATTERNS), mode: 'overlay', why: /docs are not committed/, write: 'overlay' },
+    { name: 'a domain under an ignored docs root', make: () => repo({ docs }), mode: 'overlay', why: /docs are ignored by git/, write: 'overlay' },
+    { name: 'a watch-less folder only (quality/), root not ignored', make: () => withFile(repo({ tracked: true }), '.claude/docs/quality/ASSESSMENT.md', '# Findings\n'), mode: 'git', why: /no docs domain yet/ },
+    { name: 'declared git over an ignored docs root', make: () => repo({ docs }), env: { CURSOR_DOCS_VERSIONING: 'git' }, mode: 'git', why: DECLARED, write: 'in place' },
+    { name: 'declared local over committed docs', make: () => repo({ tracked: true, docs }), env: { CURSOR_DOCS_VERSIONING: 'local' }, mode: 'overlay', why: DECLARED, write: 'overlay' },
+    { name: 'declared local over a fresh project', make: () => repo({ tracked: true }), env: { CURSOR_DOCS_VERSIONING: 'local' }, mode: 'overlay', why: DECLARED },
+    { name: 'no git repo, no docs', make: () => { const r = repo({ tracked: true }); fs.rmSync(path.join(r.root, '.git'), { recursive: true, force: true }); return r; }, mode: 'no git', why: /docs written in place/ },
+  ];
+  const versioningOf = (r, env = {}) => spawnSync(process.execPath, ['-e', 'process.stdout.write(require(process.argv[1]).status().versioning)', path.join(HOOKS, 'docs.js')], {
+    cwd: r.root, encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: r.root, CLAUDE_STACK_DOCS_PATH: '.claude/docs', CLAUDE_DOCS_PATH: '', CURSOR_DOCS_PATH: '.claude/docs', CURSOR_DOCS_VERSIONING: '', CLAUDE_STACK_DOCS_VERSIONING: '', ...env },
+  }).stdout;
+  for (const row of rows) {
+    const r = row.make();
+    try {
+      const line = (r.cli(['status'], undefined, row.env).stdout.match(/^mode: .*$/m) || ['(no mode line)'])[0];
+      assert.ok(line.startsWith(`mode: ${row.mode} (`), `${row.name}: ${line}`);
+      assert.match(line, row.why, `${row.name}: the reason printed is the true one`);
+      assert.strictEqual(versioningOf(r, row.env), { git: 'git', overlay: 'local', 'no git': 'none' }[row.mode], `${row.name}: status().versioning`);
+      if (!row.write) continue;
+      r.git('switch', '-qc', 'feat/rule');
+      const out = r.cli(['set', 'patterns#orders'], setText('orders', 'orders', 'Refunds are capped at 10.'), row.env);
+      assert.strictEqual(out.status, 0, `${row.name}: ${out.stdout}${out.stderr}`);
+      const inPlace = /capped at 10/.test(r.read('.claude/docs/architecture/references/patterns.md'));
+      const overlay = r.exists('.claude/docs/.branches/feat-rule/architecture/references/patterns/orders.md');
+      assert.deepStrictEqual({ inPlace, overlay }, row.write === 'in place' ? { inPlace: true, overlay: false } : { inPlace: false, overlay: true }, `${row.name}: the write lands ${row.write}`);
+    } finally { r.rm(); }
+  }
 });
 
 // In git mode the automatic halves have nothing to do - git carries the docs with the branch - and an overlay

@@ -954,6 +954,17 @@ _migrate_docs_file() {  # $1 = old absolute path, $2 = new absolute path, $3 = l
   log "  docs migration ($label): ${old##*/} -> $new"
 }
 
+_enable_docs_domain() {  # $1 = domain folder, $2 = its capture doc, $3 = label - ABSENT-ONLY: when the doc exists and the folder holds no watch.json (nor a dangling link by that name), writes the minimal '{}' that makes the folder a domain the docs engine reads while declaring nothing - no source root, no watch entry, no notOwned; the capture fills in the real entries on its next run. Every exit is 0: under `set -euo pipefail` a failed test as the last statement would end the whole install.
+  local dir="$1" doc="$2" label="$3"
+  if [ ! -f "$dir/$doc" ] || [ -e "$dir/watch.json" ] || [ -L "$dir/watch.json" ]; then return 0; fi
+  if { printf '{}\n' > "$dir/watch.json"; } 2>/dev/null; then
+    log "  docs domain ($label): wrote an empty ${dir##*/}/watch.json - the docs engine now reads this folder; the next capture run fills in its entries"
+  else
+    log "  !! docs domain ($label): could not write $dir/watch.json - the docs engine will not read this folder until a capture writes one"
+  fi
+  return 0
+}
+
 migrate_docs_domains() {  # INSTALL + UPDATE: three absent-only moves onto the docs-domain layout - a file a capture used to write at the OLD path now writes at the NEW one, so an existing install's file is relocated once, byte-identical, and never overwrites a file already at the new path. Touches nothing else: related-context/ keeps every sibling-repo working paper - the capture's own drop-box for cross-repo plans, change requests, issue notes - exactly where it is; only the orientation doc this capture wrote moves out of it. Cursor has no per-project settings store, so the docs root here reads the SAME OS env var stamp_docs_root_rule stamps from - never a settings file.
   local root docs_root base
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
@@ -962,6 +973,11 @@ migrate_docs_domains() {  # INSTALL + UPDATE: three absent-only moves onto the d
   _migrate_docs_file "$base/PROJECT-CODE-STYLE.md" "$base/code-style/CODE-STYLE.md" "code style"
   _migrate_docs_file "$base/architecture/ASSESSMENT.md" "$base/quality/ASSESSMENT.md" "architecture quality"
   _migrate_docs_file "$base/related-context/PROJECT-RELATED-CONTEXT.md" "$base/related-projects/RELATED-PROJECTS.md" "related projects"
+  # A moved folder is invisible to the docs engine until it holds a watch.json. Keyed on the doc sitting at its NEW
+  # path, not on this run having moved it, so an install an earlier run migrated is switched on too. Only these two:
+  # quality/ and related-context/ carry no watch.json BY DESIGN - one there would make either a domain silently.
+  _enable_docs_domain "$base/code-style" "CODE-STYLE.md" "code style"
+  _enable_docs_domain "$base/related-projects" "RELATED-PROJECTS.md" "related projects"
 }
 
 install_cursor_agents() {

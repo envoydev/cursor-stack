@@ -57,11 +57,16 @@ Invariants).
   its covering section was read on `preToolUse`; nudges a rewrite of a section a watched change hit,
   once, on `stop` (Cursor's `stop` cannot block, so this is a nudge, not a hard gate).
   `CURSOR_DOCS_BLOCK` / `CURSOR_DOCS_GATE` / `CURSOR_DOCS_ASK` turn its three parts off. It shares its
-  engine, `docs.js`, byte-identical with claude-stack's copy - `docs.js` answers no hook event itself, so
-  it carries no `hooks.json` entry despite living on disk beside the hook that requires it.
+  engine, `docs.js`, with claude-stack's copy, kept as close to byte-identical as the two repos'
+  divergences allow (the docs-root env spelling, the versioning key list and one hint string are
+  genuine platform lines; a pre-existing gap - claude-stack's `askRef`/`--expect` compare-and-swap
+  finish-ask, from before this repo's own docs-domains model was ported - was never mirrored here
+  either, so a raw diff of the two files is wider than the platform lines alone would explain).
+  `docs.js` answers no hook event itself, so it carries no `hooks.json` entry despite living on disk
+  beside the hook that requires it.
 - `scripts/guard-hooks.test.js` - behavior tests for the six guards, and `scripts/docs-session.test.js`
   for the seventh (`docs-session.js`'s `writeTargets` / `consultedBy` / `toolPaths`, ported from
-  claude-stack's own suite the same way `scripts/docs-engine.test.js` ports the byte-identical engine's);
+  claude-stack's own suite the same way `scripts/docs-engine.test.js` ports the closely-mirrored engine's);
   `npm test` runs the lint then every `*.test.js` node discovers. Each drives its hook the way Cursor
   does: payload JSON on stdin, permission / context / followup read off stdout.
   They exist because these hooks are PORTED, and a port is exactly where a gate quietly stops gating -

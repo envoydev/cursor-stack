@@ -1103,6 +1103,124 @@ test('the engine log lands under the docs root, beside hook-blocks', () => {
   } finally { r.rm(); }
 });
 
+// --- docs domains: any top-level folder holding a watch.json, not just architecture/ ---
+
+test('a folder is a domain only when it holds a watch.json; architecture is grandfathered without one', () => {
+  const r = repo({ docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    r.write('.claude/docs/decisions/DECISIONS.md', section('adr-1', '', 'Use Postgres.'));
+    const out = r.cli(['files']).stdout;
+    assert.match(out, /architecture\/references\/patterns\.md/, 'architecture counts with no watch.json of its own');
+    assert.doesNotMatch(out, /decisions\/DECISIONS\.md/, 'a folder with no watch.json is not a domain yet');
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({ notOwned: ['**.md'] }));
+    const out2 = r.cli(['files']).stdout;
+    assert.doesNotMatch(out2, /decisions\/DECISIONS\.md/, 'notOwned still excludes it once it is a real domain');
+  } finally { r.rm(); }
+});
+
+test('a bare ref resolves while exactly one domain holds that file; a second domain with the same name throws naming both', () => {
+  const r = repo({ docs: { 'NOTES.md': section('a', '', 'Architecture note.') } });
+  try {
+    r.write('.claude/docs/code-style/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [] }));
+    assert.match(r.cli(['show', 'NOTES#a']).stdout, /Architecture note/, 'still resolves while only one domain has it');
+    r.write('.claude/docs/code-style/NOTES.md', section('b', '', 'Style note.'));
+    const out = r.cli(['show', 'NOTES#a']);
+    assert.match(out.stdout, /NOTES is in architecture and code-style - name one, as <domain>\/NOTES/);
+  } finally { r.rm(); }
+});
+
+test('a domain-qualified ref always resolves, and a mistyped domain throws instead of composing a bad path', () => {
+  const r = repo({ docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    assert.match(r.cli(['show', 'architecture/patterns#orders']).stdout, /ledgered before the payment call/);
+    assert.match(r.cli(['show', 'architecture/references/patterns#orders']).stdout, /ledgered before the payment call/);
+    // 'bogus' is not a real domain, so the whole ref is read as a BARE key carrying a slash (a subfolder,
+    // the same shape as 'references/patterns#orders') rather than as a domain typo - parseRef has no way
+    // to tell those two apart, by design: only a leading segment domains() actually has is ever treated
+    // as a domain.
+    const out = r.cli(['show', 'bogus/patterns#orders']);
+    assert.match(out.stdout, /no domain or subfolder resolves bogus\/patterns - name one, as <domain>\/bogus\/patterns/);
+  } finally { r.rm(); }
+});
+
+test('set refuses a cross-domain filename collision instead of writing into the alphabetically-first domain', () => {
+  const r = repo({ docs: { 'NOTES.md': section('a', '', 'Architecture note.') } });
+  try {
+    r.write('.claude/docs/code-style/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [] }));
+    r.write('.claude/docs/code-style/NOTES.md', section('b', '', 'Style note.'));
+    const out = r.cli(['set', 'NOTES#a'], setText('a', 'a', 'Rewritten.'));
+    assert.notStrictEqual(out.status, 0);
+    assert.match(out.stdout, /NOTES is in architecture and code-style/);
+    assert.strictEqual(r.cli(['set', 'architecture/NOTES#a'], setText('a', 'a', 'Rewritten.')).status, 0, 'the qualified spelling still writes');
+  } finally { r.rm(); }
+});
+
+test('two domains holding the same filename never collide in the branch overlay', () => {
+  const r = repo({ docs: { 'NOTES.md': section('a', '', 'Architecture note.') } });
+  try {
+    r.write('.claude/docs/code-style/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [] }));
+    r.write('.claude/docs/code-style/NOTES.md', section('b', '', 'Style note.'));
+    r.git('switch', '-qc', 'feat/two-domains');
+    assert.strictEqual(r.cli(['set', 'architecture/NOTES#a'], setText('a', 'a', 'Architecture rewrite.')).status, 0);
+    assert.strictEqual(r.cli(['set', 'code-style/NOTES#b'], setText('b', 'b', 'Style rewrite.')).status, 0);
+    assert.ok(r.exists('.claude/docs/.branches/feat-two-domains/architecture/NOTES/a.md'));
+    assert.ok(r.exists('.claude/docs/.branches/feat-two-domains/code-style/NOTES/b.md'));
+    assert.match(r.cli(['show', 'architecture/NOTES#a']).stdout, /Architecture rewrite/);
+    assert.match(r.cli(['show', 'code-style/NOTES#b']).stdout, /Style rewrite/);
+  } finally { r.rm(); }
+});
+
+test('a domain declares notOwned files the engine never writes, bare or qualified', () => {
+  const r = repo({});
+  try {
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [], notOwned: ['**.md'] }));
+    r.write('.claude/docs/decisions/DECISIONS.md', section('adr-1', '', 'Use Postgres.'));
+    const qualified = r.cli(['set', 'decisions/DECISIONS#adr-1'], setText('adr-1', 'adr-1', 'Use MySQL.'));
+    assert.notStrictEqual(qualified.status, 0);
+    assert.match(qualified.stdout, /DECISIONS\.md is maintained by another skill - this engine does not write it/);
+    const bare = r.cli(['set', 'DECISIONS#adr-1'], setText('adr-1', 'adr-1', 'Use MySQL.'));
+    assert.notStrictEqual(bare.status, 0);
+    assert.match(bare.stdout, /is maintained by another skill/, 'a bare ref to a notOwned file is refused too, not just reported missing');
+  } finally { r.rm(); }
+});
+
+test('ORIENTATION.md stays refused under the notOwned mechanism, with no notOwned entry declared for it', () => {
+  const r = repo({ docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    r.write('.claude/docs/architecture/ORIENTATION.md', 'Some block.\n');
+    const out = r.cli(['set', 'ORIENTATION#x'], setText('x', 'x', 'Nope.'));
+    assert.notStrictEqual(out.status, 0);
+    assert.match(out.stdout, /ORIENTATION\.md is maintained by another skill/);
+  } finally { r.rm(); }
+});
+
+test('lint accepts a watch entry naming a protected section, and still fails one naming a genuinely missing one', () => {
+  const r = repo({ files: { 'src/schema.sql': 'CREATE TABLE t();\n' } });
+  try {
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({
+      sourceRoots: ['src'], notOwned: ['**.md'],
+      watch: [{ kind: 'schema', globs: ['src/**'], sections: ['decisions/DECISIONS#adr-1', 'decisions/DECISIONS#nope'] }],
+    }));
+    r.write('.claude/docs/decisions/DECISIONS.md', section('adr-1', '', 'Use Postgres.'));
+    const out = r.cli(['lint']).stdout;
+    assert.doesNotMatch(out, /adr-1.*does not exist/, 'a protected section is not reported missing');
+    assert.match(out, /decisions\/watch\.json 'schema' names a section that does not exist: decisions\/DECISIONS#nope/);
+  } finally { r.rm(); }
+});
+
+test('watchHits tags every hit with the domain its own watch.json came from', () => {
+  const r = repo({ files: { 'src/a.cs': 'x', 'src/b.ts': 'y' } });
+  try {
+    r.write('.claude/docs/architecture/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [{ kind: 'cs', globs: ['**.cs'], sections: ['patterns#orders'] }] }));
+    r.write('.claude/docs/architecture/references/patterns.md', PATTERNS);
+    r.write('.claude/docs/code-style/watch.json', JSON.stringify({ sourceRoots: ['src'], watch: [{ kind: 'ts', globs: ['**.ts'], sections: ['STYLE#a'] }] }));
+    r.write('.claude/docs/code-style/STYLE.md', section('a', '', 'Style rule.'));
+    const out = r.cli(['watch', 'src/a.cs', 'src/b.ts']).stdout;
+    assert.match(out, /cs: src\/a\.cs -> patterns#orders/);
+    assert.match(out, /ts: src\/b\.ts -> STYLE#a/);
+  } finally { r.rm(); }
+});
+
 test('the engine finds the Cursor docs root from a plain shell with no Claude env var set', () => {
   // Regression for the fix-round-2 bug: docs-session.js's own bridge only reached its own process, but
   // the orientation block, the pointer rule and the skill prose all tell the model to run

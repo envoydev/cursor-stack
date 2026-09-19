@@ -437,3 +437,42 @@ test('a new module folder hits newModule; a committed script change counts', () 
     assert.match(JSON.parse(r.hook(stopEv(t)).stdout).followup_message, /patterns#orders/);
   } finally { r.rm(); }
 });
+
+// A watch entry can name a section in a file its own domain declares notOwned - a decision a PERSON
+// recorded, that this engine must never rewrite. The finish ask has to say so instead of offering a `set`
+// command nobody may act on, and (when an ordinary ask is also due) the warning leads.
+test('a watched change hitting a protected section is a warning, not an ask - text quoted, no command offered', () => {
+  const r = repo({ files: { 'src/schema.sql': 'CREATE TABLE t();\n' } });
+  try {
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({
+      sourceRoots: ['src'], notOwned: ['**.md'],
+      watch: [{ kind: 'schema', globs: ['src/**'], sections: ['decisions/DECISIONS#adr-1'] }],
+    }));
+    r.write('.claude/docs/decisions/DECISIONS.md', section('adr-1', '', 'Use Postgres for the ledger.'));
+    const s = sid(); start(r, s);
+    r.write('src/schema.sql', 'CREATE TABLE t(id int);\n');
+    const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
+    assert.match(followup, /A DECISION recorded by a person covers this file - 'adr 1', in \.claude\/docs\/decisions\/DECISIONS\.md:/);
+    assert.match(followup, /"Use Postgres for the ledger\."/);
+    assert.match(followup, /this engine cannot rewrite it, only a person can/);
+    assert.doesNotMatch(followup, /docs\.js set decisions\/DECISIONS/, 'no command is offered for a protected section');
+  } finally { r.rm(); }
+});
+
+test('a warning and an ordinary ask in the same turn: the warning leads', () => {
+  const r = repo({ files: { 'src/Api/Program.cs': 'app.Run();\n', 'src/schema.sql': 'CREATE TABLE t();\n' }, docs: { 'references/patterns.md': PATTERNS, 'watch.json': WATCH() } });
+  try {
+    r.write('.claude/docs/decisions/watch.json', JSON.stringify({
+      sourceRoots: ['src'], notOwned: ['**.md'],
+      watch: [{ kind: 'schema', globs: ['src/schema.sql'], sections: ['decisions/DECISIONS#adr-1'] }],
+    }));
+    r.write('.claude/docs/decisions/DECISIONS.md', section('adr-1', '', 'Use Postgres for the ledger.'));
+    const s = sid(); start(r, s);
+    r.write('src/Api/Program.cs', 'app.UseAuth();\napp.Run();\n');
+    r.write('src/schema.sql', 'CREATE TABLE t(id int);\n');
+    const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
+    const warnAt = followup.indexOf('A DECISION recorded');
+    const askAt = followup.indexOf('One check before you finish');
+    assert.ok(warnAt >= 0 && askAt > warnAt, 'the warning block comes before the ask block');
+  } finally { r.rm(); }
+});

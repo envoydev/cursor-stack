@@ -47,8 +47,9 @@ let SOURCE_CLONE = null;
 test.before(() => {
   SOURCE_CLONE = mkTmp('installer-memory-src-');
   execFileSync('git', ['clone', '-q', ROOT, SOURCE_CLONE]);
-  const branch = execFileSync('git', ['-C', SOURCE_CLONE, 'branch', '--show-current'], { encoding: 'utf8' }).trim();
-  if (branch !== 'main') execFileSync('git', ['-C', SOURCE_CLONE, 'branch', '-m', branch, 'main']);
+  // checkout -B, not a branch rename: a pull-request run checks out a detached merge commit, so there is
+  // no current branch to rename - -B points 'main' at whatever was cloned either way.
+  execFileSync('git', ['-C', SOURCE_CLONE, 'checkout', '-q', '-B', 'main']);
 });
 test.after(() => { if (SOURCE_CLONE) rmDir(SOURCE_CLONE); });
 

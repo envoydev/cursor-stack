@@ -16,10 +16,12 @@
   Cursor UI); their skill / MCP / hook components are provisioned here. The .cs conventions ship as
   a Cursor rule (.cursor/rules/csharp.mdc), not a hook.
 
-  Optional extras: a Space (any word) -> separate memory DB (memory_<Space>.db), omit for the default
-  shared DB; -GitHubCli -> install gh via winget if missing. The ~/.memory-mcp root sits outside the
-  project so recall carries across every project. Cursor is self-contained under ~/.cursor; the space
-  does not change that. e.g.: .\cursor-stack.ps1 install work -GitHubCli
+  Optional extras: a Space (any word) -> the memory MCP's per-space DB at the 'scoped' level
+  (memory_<Space>.db); -MemoryLevel global|scoped|project -> the memory MCP's db level (default global
+  when nothing is registered yet, kept byte-for-byte on a later run that names none); -GitHubCli ->
+  install gh via winget if missing. The ~/.memory-mcp root sits outside the project so recall carries
+  across every project. Cursor is self-contained under ~/.cursor; the space/level do not change that.
+  e.g.: .\cursor-stack.ps1 install work -MemoryLevel scoped -GitHubCli
 
   Scope (default PROJECT - installs the full set INTO this repo; $env:SCOPE = 'global' to
   install it into the active account instead):
@@ -46,10 +48,19 @@ param(
   [Parameter(Mandatory = $true, Position = 0)]
   [ValidateSet('install', 'update')]
   [string]$Action,
-  # Optional space (any word): a separate memory DB (memory_<Space>.db). Omit for the default shared
-  # DB. Cursor is self-contained under ~/.cursor; the space does not change that.
+  # Optional space (any word): the memory MCP's per-space DB at the 'scoped' level (memory_<Space>.db).
+  # Omit for the default shared DB. Cursor is self-contained under ~/.cursor; the space does not change
+  # that.
   [Parameter(Position = 1)]
   [string]$Space = '',
+  # Optional: the memory MCP's db level. 'global' (default when nothing is registered yet):
+  # ~/.memory-mcp/memory.db, shared across every project. 'scoped': ~/.memory-mcp/memory_<Space>.db
+  # (memory_default.db with no -Space). 'project': <repo>/.memory-mcp/memory.db, gitignored by this run.
+  # Omitted on a run that finds an existing registration, its MCP_MEMORY_SQLITE_PATH is kept
+  # byte-for-byte and only the rest of the entry (pin, pragmas) is upgraded; omitted with none
+  # registered, global. e.g.: .\cursor-stack.ps1 install -MemoryLevel project
+  [ValidateSet('', 'global', 'scoped', 'project')]
+  [string]$MemoryLevel = '',
   # Optional: context7 transport. 'remote' (default) = hosted HTTP server, no local process;
   # 'local' = the local npx stdio server. e.g.: .\cursor-stack.ps1 install -Context7 local
   [ValidateSet('remote', 'local')]
@@ -303,8 +314,13 @@ $Skills = @(
 # (3) MCP servers "name|args"; scope follows $Scope. SINGLE-QUOTED so the ${...} shared-baseline
 #     tokens stay LITERAL here and are resolved when .cursor/mcp.json is written (see Set-CursorMcps).
 #     memory: uses ${HOME_MEMORY_DIR} - a script-local token resolved to $HOME\.memory-mcp at install
-#     time, outside the project so recall carries across projects. A space (e.g. 'work')
-#     switches to a separate per-space DB (memory_<space>.db).
+#     time, outside the project so recall carries across projects. -MemoryLevel (global default |
+#     scoped | project) picks the db path; a space (e.g. 'work') only matters at the scoped level
+#     (memory_<space>.db). The [sqlite] extra (not the bare package) is REQUIRED - without it the
+#     server has no real embedding backend and refuses to start on any db that already holds memories.
+#     Pin syntax is `pkg[extra]==version`, not `pkg[extra]@version` - uvx's `@version` shorthand does
+#     not compose with an extra. MCP_MEMORY_SQLITE_PRAGMAS=busy_timeout=15000 raises the service's
+#     5000ms default so two processes sharing one db wait out a write instead of failing SQLITE_BUSY.
 # PERFORMANCE (see cursor-stack.sh for the full rationale): resolve each runtime's LATEST version
 # HERE (install/update network step) and bake it into the registration. `install` skips already-
 # registered MCPs, so the resolved version stays FROZEN until `update` re-resolves and bumps it -
@@ -334,16 +350,31 @@ else {
 $Ctx7Pin   = if ($McpContext7Ver)   { '@' + $McpContext7Ver }   else { '' }
 $PwPin     = if ($McpPlaywrightVer) { '@' + $McpPlaywrightVer } else { '' }
 $SerenaPin = if ($McpSerenaVer)     { '@' + $McpSerenaVer }     else { '' }
-$MemoryPin = if ($McpMemoryVer)     { '@' + $McpMemoryVer }     else { '' }
+# memory's pin uses '==' (PEP 508 requirement syntax), not the '@version' shorthand the other pins use
+# above - uvx's `--from pkg@version` shorthand does not compose with the '[sqlite]' extra.
+$MemoryPin  = if ($McpMemoryVer) { '==' + $McpMemoryVer } else { '' }
+$MemorySpec = 'mcp-memory-service[sqlite]' + $MemoryPin
 
-$MemoryBackend = 'sqlite_vec'  # separation is by DB path (below); backend stays sqlite_vec (the only valid local backend)
-$MemoryDbFile  = if ($Space) { "memory_$Space.db" } else { 'memory.db' }
-# Windows path separator on purpose: ${HOME_MEMORY_DIR} resolves via Join-Path to a backslashed
-# root (C:\Users\...\.memory-mcp), so the file joins with '\' too - '...\.memory-mcp\memory.db' -
-# instead of the mixed '...\.memory-mcp/memory.db'. JSON serialization escapes it automatically.
-$MemoryEntry   = 'memory|-e MCP_MEMORY_STORAGE_BACKEND=' + $MemoryBackend +
-                 ' -e MCP_MEMORY_SQLITE_PATH=${HOME_MEMORY_DIR}\' + $MemoryDbFile +
-                 ' -- uvx --with numpy --from mcp-memory-service' + $MemoryPin + ' memory server'
+$MemoryBackend = 'sqlite_vec'
+$MemoryPragmas = 'busy_timeout=15000'
+# $MemoryLevel is '' when the run named no level word - Set-CursorMcps keeps an existing registration's
+# MCP_MEMORY_SQLITE_PATH byte-for-byte in that case and only upgrades the rest of the entry; the path
+# built here is only what a FRESH (nothing registered yet) install actually gets, and it defaults to
+# global exactly like an explicit 'global' would. Windows path separator on purpose for the home-rooted
+# forms: ${HOME_MEMORY_DIR} resolves via Join-Path to a backslashed root, so the file joins with '\'
+# too - instead of the mixed '...\.memory-mcp/memory.db' (JSON serialization escapes it automatically).
+# The project form keeps forward slashes like every other ${CLAUDE_PROJECT_DIR:-.}-relative entry
+# (playwright, above) - Cursor/uvx accept them on Windows too.
+$MemorySpaceFile = if ($Space) { "memory_$Space.db" } else { 'memory_default.db' }
+$MemoryDbPath = switch ($MemoryLevel) {
+  'scoped'  { '${HOME_MEMORY_DIR}\' + $MemorySpaceFile }
+  'project' { '${CLAUDE_PROJECT_DIR:-.}/.memory-mcp/memory.db' }
+  default   { '${HOME_MEMORY_DIR}\memory.db' }
+}
+$MemoryEntry = 'memory|-e MCP_MEMORY_STORAGE_BACKEND=' + $MemoryBackend +
+               ' -e MCP_MEMORY_SQLITE_PATH=' + $MemoryDbPath +
+               ' -e MCP_MEMORY_SQLITE_PRAGMAS=' + $MemoryPragmas +
+               ' -- uvx --with numpy --from ' + $MemorySpec + ' memory server'
 
 # npx-launched MCPs (context7, angular-cli, playwright): on Windows the spawned stdio server can't
 # resolve the bare `npx` shim (it's npx.cmd), so it dies with JSON-RPC -32000 - wrap in `cmd /c`.
@@ -378,7 +409,7 @@ $Mcps = @(
   'chrome-devtools|-- cmd /c npx chrome-devtools-mcp@latest' # OPT-IN browser/extension debug; drives a full Chrome (heavy) - comment out outside web projects; no WS-frame payloads; pin a version
   'appium-mcp|-- cmd /c npx -y appium-mcp@latest' # OPT-IN native mobile E2E (official Appium MCP); embedded UiAutomator2/XCUITest drivers, needs Xcode and/or Android SDK + Java (heavy) - comment out outside Capacitor/Ionic mobile projects; pin a version
   $SentryEntry  # OPT-IN Sentry error monitoring - hosted remote MCP (mcp.sentry.dev); auth via an Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN} header in .cursor/mcp.json (OS env), or no header under -SentryAuth oauth; comment out where the project has no Sentry
-  $MemoryEntry  # memory: cross-project recall - the subagent handoff runs on serena; comment out in a standalone project
+  $MemoryEntry  # memory: shared cross-project recall (required, like serena) - preferences, corrections and lessons the docs domains don't hold
   $Context7Entry                              # up-to-date library/framework/SDK docs (beats recalled API knowledge)
 )
 
@@ -403,6 +434,13 @@ $Mcps = @(
 #                                       orientation - Cursor's subagentStart can only answer allow/deny, with
 #                                       no channel to inject context, so a dispatched subagent reads the
 #                                       generated baseline-project-architecture.mdc pointer rule instead.
+#       - memory-session             -> sessionStart (pushes the memory MCP's own stored preferences,
+#                                       corrections, project facts and lessons into the session, newest
+#                                       first, own-project then global then related-project, capped at
+#                                       4KB). Ships its engine, memory.js, beside it (copied, never itself
+#                                       wired to an event). Silent whenever nothing can be shown (no
+#                                       memory server registered, an empty selection, node:sqlite
+#                                       unavailable below Node 22.13) - never blocks a session start.
 #     Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot
 #     block and never sees the response text) and usage instrumentation (its analyzer reads a
 #     transcript format Cursor does not produce).
@@ -421,6 +459,7 @@ $CursorHooks = @(
   'docs-session.js::sessionStart'
   'docs-session.js::preToolUse'
   'docs-session.js::stop'
+  'memory-session.js::sessionStart'
 )
 # A rule entry is 'name' (fetched from $CursorRulesBaseUrl) or 'name|url' (fetched from that url -
 # the form for a third-party rule we would reference rather than vendor; currently unused).
@@ -432,6 +471,7 @@ $CursorRules = @(
   'baseline-git.mdc'
   'baseline-navigation.mdc'
   'baseline-docs-root.mdc'               # generated-docs root resolution (CURSOR_DOCS_PATH)
+  'baseline-memory.mdc'                  # what belongs in the shared memory MCP vs the docs domains
   # Path-scoped routing
   'markdown-docs.mdc'                    # markdown-style routing, path-scoped **/*.md
   'javascript-conventions.mdc'           # JS-family conventions, path-scoped js/jsx/mjs/cjs
@@ -856,6 +896,14 @@ function Set-CursorMcps {
       }
     }
     if (-not $cmd) { continue }
+    # memory, no level word this run: keep the EXISTING registration's db path byte-for-byte (a level
+    # word always wins outright) and only upgrade the rest of the entry (command/args/pin/pragmas) -
+    # so a plain `update` never silently relocates a project's or a space's memories to global.
+    if ($name -eq 'memory' -and -not $MemoryLevel -and $old) {
+      $oldEnv = Get-DictValue $old.Value 'env'
+      $oldPath = Get-DictValue $oldEnv 'MCP_MEMORY_SQLITE_PATH'
+      if ($oldPath) { $envMap['MCP_MEMORY_SQLITE_PATH'] = $oldPath }
+    }
     $server = [ordered]@{ command = $cmd; args = @($cmdArgs) }
     if ($envMap.Count -gt 0) { $server['env'] = $envMap }
     if ($data.mcpServers.PSObject.Properties[$name]) { $data.mcpServers.PSObject.Properties.Remove($name) }
@@ -865,6 +913,53 @@ function Set-CursorMcps {
   Write-JsonFile $data $mcpPath
   Log "  cursor mcp.json -> $mcpPath"
   Install-PlaywrightBrowser $data
+  Set-MemoryGitignore $data $projDir
+}
+
+# Reads a value by key off either a real IDictionary (a hashtable/ordered dictionary this run just
+# built, before Write-JsonFile serializes it) or a PSCustomObject (anything parsed back from JSON) -
+# an mcpServers.<name> entry can be either shape depending on whether this run just wrote it or it
+# came in from disk untouched, and this is the one place both need reading the same way.
+function Get-DictValue($Obj, [string]$Key) {
+  if ($null -eq $Obj) { return $null }
+  if ($Obj -is [System.Collections.IDictionary]) {
+    if ($Obj.Contains($Key)) { return $Obj[$Key] }
+    return $null
+  }
+  if ($Obj.PSObject.Properties[$Key]) { return $Obj.PSObject.Properties[$Key].Value }
+  return $null
+}
+
+# After Set-CursorMcps has written (or left untouched) mcp.json, keep a project-level memory db out of
+# git the same way every other stack-generated, machine-local artifact is called out - a printed
+# reminder alone (see the end-of-run summary) is not enough for a folder holding personal recall notes,
+# so this one writes its OWN .gitignore, absent-only, touching nothing but that one file. Reads the
+# path back from $Data (this run's own in-memory result) rather than from $MemoryLevel, so a plain
+# `update` that kept an existing project-level path byte-for-byte (no level word this run) is covered
+# too, not just a fresh -MemoryLevel project install.
+function Set-MemoryGitignore($Data, $ProjDir) {
+  $mem = $Data.mcpServers.PSObject.Properties['memory']
+  if (-not $mem) { return }
+  $envObj = Get-DictValue $mem.Value 'env'
+  $dbPath = [string](Get-DictValue $envObj 'MCP_MEMORY_SQLITE_PATH')
+  if (-not $dbPath) { return }
+  $memDir = Join-Path $ProjDir '.memory-mcp'
+  try {
+    # GetFullPath normalizes mixed '/'/'\' separators (the project-level template mixes them - see the
+    # entry's own comment above) so this compares real filesystem locations, not raw strings.
+    $dbParent = [System.IO.Path]::GetFullPath((Split-Path -Parent $dbPath))
+    $wantDir  = [System.IO.Path]::GetFullPath($memDir)
+  } catch { return }
+  if ($dbParent.TrimEnd('\', '/') -ne $wantDir.TrimEnd('\', '/')) { return }
+  $gitignore = Join-Path $memDir '.gitignore'
+  if (Test-Path -LiteralPath $gitignore) { return }
+  try {
+    if (-not (Test-Path -LiteralPath $memDir)) { New-Item -ItemType Directory -Path $memDir -Force | Out-Null }
+    [System.IO.File]::WriteAllText($gitignore, "*`n", (New-Object System.Text.UTF8Encoding($false)))
+    Log '  cursor memory: .memory-mcp/.gitignore written (project-level db kept out of git)'
+  } catch {
+    Log "  !! could not write $gitignore"
+  }
 }
 
 # firefox / webkit are Playwright's own builds, not a browser the machine already has: download each one
@@ -969,6 +1064,22 @@ function Set-CursorHooks {
     }
     else {
       Copy-Item -LiteralPath $docsSrc -Destination $docsDest -Force; Log '  cursor hook copied -> docs.js'
+    }
+  }
+
+  # memory-session.js requires('./memory.js') from its own directory - the engine is copied beside it,
+  # never itself wired to an event (same hash-compare-then-skip as the loop above and the docs.js copy).
+  if ($CursorHooks -match '^memory-session\.js::') {
+    $memDest = Join-Path $hooksDir 'memory.js'
+    $memSrc = if ($script:SourceDir) { Join-Path $script:SourceDir 'hooks\memory.js' } else { $null }
+    if (-not ($memSrc -and (Test-Path -LiteralPath $memSrc))) {
+      if (-not (Test-Path -LiteralPath $memDest)) { Log '  !! not in source and no local copy: memory.js - skipping' }
+    }
+    elseif ((Test-Path -LiteralPath $memDest) -and ((Get-FileHash -LiteralPath $memSrc).Hash -eq (Get-FileHash -LiteralPath $memDest).Hash)) {
+      Log '  cursor hook current: memory.js'
+    }
+    else {
+      Copy-Item -LiteralPath $memSrc -Destination $memDest -Force; Log '  cursor hook copied -> memory.js'
     }
   }
 
@@ -1217,3 +1328,4 @@ Write-Host '  .serena          serena per-project state: registry, cache, langua
 Write-Host '  .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules + install stamp'
 Write-Host '  .slopwatch       dotnet-slopwatch output'
 Write-Host '  .playwright      playwright MCP user-data-dir + screenshots'
+Write-Host "  .memory-mcp      memory MCP db at the 'project' level only (global/scoped live under ~/.memory-mcp) - this run already wrote its own .gitignore inside that folder, so nothing further is needed there"

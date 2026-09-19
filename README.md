@@ -31,9 +31,9 @@ The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result
 | Component | Lands in | Notes |
 | --------- | -------- | ----- |
 | **Skills** (77) | `.cursor/skills/` | real copies; run as Cursor Skills (`agentskills.io`); includes `project-solve-cross-task` orchestration + routing (single-stack trios + cross-domain). Vendored in this repo's `skills/`, copied at install out of the release archive (clone fallback) (`scripts/cursor-stack.sh install skills-only`) |
-| **MCP servers** (8) | `.cursor/mcp.json` | `angular-cli`, `serena` (`--context ide-assistant`), `playwright`, `memory`, `context7`, plus `chrome-devtools` + `appium-mcp` (heavy - active; comment out where not needed) and `sentry` (error monitoring - hosted remote MCP, `SENTRY_ACCESS_TOKEN` as an OS env var sent as `Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN}`, or no header with `sentry-oauth` for Sentry's OAuth sign-in; comment out without Sentry). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project. Cursor supports MCP natively; shell `${…}` path tokens are resolved to concrete paths and bare `${VAR}` secrets rewritten to `${env:VAR}` (Cursor does no shell interpolation) |
-| **Hooks** (7) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` + `guard-ungated-commit` (`beforeShellExecution`): block a force-push to a protected branch, an unrecoverable `rm -rf`, and a non-trivial commit with no review receipt. `guard-read-whole-file` (`beforeReadFile` + `beforeShellExecution`): a whole-file read of a large source file goes through serena first, by tool or by shell `cat`. `guard-unapproved-dispatch` (`subagentStart`): an implementer fan-out needs the recorded approval. `guard-secret-value` (`preToolUse` + `beforeShellExecution` + `beforeReadFile`): a credential is read for presence, never its value - a dump is redacted or denied. `docs-session` (`sessionStart` + `preToolUse` + `stop`): the architecture docs' start block, the first source change held until a covering section was read, and the watch-list nudge at session end (a `followup_message`, since Cursor's `stop` cannot block) - ships its engine, `docs.js`, beside it |
-| **Rules** (18) | `.cursor/rules/` | six always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` / `docs-root` - `alwaysApply`, the cross-cutting conventions) + the glob-auto-attaching convention rules `csharp` / `typescript` / `javascript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `winforms-conventions.mdc` (`.Designer.cs`, `*Form.cs`) + `angular-styling-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `devops-conventions.mdc` (Dockerfile/compose/workflows/deploy scripts) + `markdown-docs.mdc` (`.md`, a trigger patch for the doc skills) + the two repair routers `dotnet-repair-agents.mdc` / `angular-repair-agents.mdc` (a red build/suite routes to a resolver seat) |
+| **MCP servers** (8) | `.cursor/mcp.json` | `angular-cli`, `serena` (`--context ide-assistant`), `playwright`, `memory`, `context7`, plus `chrome-devtools` + `appium-mcp` (heavy - active; comment out where not needed) and `sentry` (error monitoring - hosted remote MCP, `SENTRY_ACCESS_TOKEN` as an OS env var sent as `Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN}`, or no header with `sentry-oauth` for Sentry's OAuth sign-in; comment out without Sentry). `memory` is shared cross-project recall (required, like `serena`) - preferences, corrections and lessons the docs domains don't hold; `-MemoryLevel global\|scoped\|project` (or the sh positional words `memory-global\|memory-scoped\|memory-project`) picks its db. Cursor supports MCP natively; shell `${…}` path tokens are resolved to concrete paths and bare `${VAR}` secrets rewritten to `${env:VAR}` (Cursor does no shell interpolation) |
+| **Hooks** (8) | `.cursor/hooks/` + `.cursor/hooks.json` | `guard-protected-force-push` + `guard-catastrophic-rm` + `guard-ungated-commit` (`beforeShellExecution`): block a force-push to a protected branch, an unrecoverable `rm -rf`, and a non-trivial commit with no review receipt. `guard-read-whole-file` (`beforeReadFile` + `beforeShellExecution`): a whole-file read of a large source file goes through serena first, by tool or by shell `cat`. `guard-unapproved-dispatch` (`subagentStart`): an implementer fan-out needs the recorded approval. `guard-secret-value` (`preToolUse` + `beforeShellExecution` + `beforeReadFile`): a credential is read for presence, never its value - a dump is redacted or denied. `docs-session` (`sessionStart` + `preToolUse` + `stop`): the architecture docs' start block, the first source change held until a covering section was read, and the watch-list nudge at session end (a `followup_message`, since Cursor's `stop` cannot block) - ships its engine, `docs.js`, beside it. `memory-session` (`sessionStart`): pushes the memory MCP's own stored preferences, corrections, project facts and lessons into the session, capped at 4KB - ships its engine, `memory.js`, beside it |
+| **Rules** (19) | `.cursor/rules/` | seven always-on `baseline-*.mdc` (`interaction` / `quality-gates` / `security` / `git` / `navigation` / `docs-root` / `memory` - `alwaysApply`, the cross-cutting conventions) + the glob-auto-attaching convention rules `csharp` / `typescript` / `javascript` / `sql` / `angular`-conventions.mdc + `wpf-conventions.mdc` (`.xaml`, opt-in for WPF repos) + `winforms-conventions.mdc` (`.Designer.cs`, `*Form.cs`) + `angular-styling-conventions.mdc` (`.scss`/`.css`, opt-in for Angular workspaces) + `devops-conventions.mdc` (Dockerfile/compose/workflows/deploy scripts) + `markdown-docs.mdc` (`.md`, a trigger patch for the doc skills) + the two repair routers `dotnet-repair-agents.mdc` / `angular-repair-agents.mdc` (a red build/suite routes to a resolver seat) |
 | **Agents** (43) | `.cursor/agents/` | the 4 resolvers, the 10-stack designer/implementer/verifier trios (ASP.NET, web Angular, WPF, WinForms, console, Windows Service, Ionic Angular, data, DevOps, browser extension), the 4 cross-cutting seats (`runtime-failure-diagnoser`, `ci-failure-diagnoser`, `security-auditor`, `integration-reviewer`), and the 5 read-only support seats (`evidence-gatherer`, `architecture-analyzer`, `code-style-analyzer`, `test-coverage-analyzer`, `related-project-analyzer`). Cursor (2.5+) has a Task tool and subagents that inherit the parent's MCP servers, so the roster carries the full orchestration - `project-solve-cross-task` fans out designer/implementer/verifier via the Task tool, the diagnosers dispatch `evidence-gatherer`, and the serena-memory handoff works. Cursor specifics: `model: inherit` (no reliable effort/model pin), no per-tool `tools:` allowlist (only a `readonly` bool), `superpowers` optional via `/add-plugin`, and no hard-disable of auto-delegation. Fetched from the repo's `agents/` |
 
 ### Install cadence - keep always vs install on occasion
@@ -41,8 +41,8 @@ The `.sh`/`.ps1` twins take the **same arguments** and produce the **same result
 Cost differs by artifact, so the keep-or-skip call does too:
 
 - **Skills** - permanent by default: keyword-gated and ~free when idle, so install all and let them self-gate. Whole-domain sets (the Ionic/Capacitor group - `ionic`, `capacitor-release`, `ionic-security` - and `dotnet-wpf`) are optional only if you never touch that domain.
-- **MCPs** - real launch cost, so split: baseline `context7` / `serena` / `memory` / `playwright`; domain-gated `angular-cli` (Angular projects only); opt-in `chrome-devtools` and `appium-mcp` (heavy native deps - left commented unless needed). `memory` is cross-project recall (the subagent handoff runs on serena) - comment it out in a standalone project.
-- **Rules and agents** - permanent: the convention rules auto-attach by glob (free when no file matches) and the six `baseline-*.mdc` are `alwaysApply`; the 43 agents run on demand - explicitly via `/name` or `@agent`, or the Task tool fans them out (`project-solve-cross-task` drives the designer/implementer/verifier flow, since Cursor 2.5+ supports subagent dispatch). Cursor has no plugins - per-language diagnostics come from Open-VSX extensions (install those matching the project's languages); design-taste guidance for distinctive UI lives in `angular-conventions` (its `references/design-quality.md`, installed like any Cursor skill).
+- **MCPs** - real launch cost, so split: baseline `context7` / `serena` / `memory` / `playwright`; domain-gated `angular-cli` (Angular projects only); opt-in `chrome-devtools` and `appium-mcp` (heavy native deps - left commented unless needed). `memory` is required, like `serena` - shared cross-project recall for preferences, corrections and lessons the docs domains don't hold.
+- **Rules and agents** - permanent: the convention rules auto-attach by glob (free when no file matches) and the seven `baseline-*.mdc` are `alwaysApply`; the 43 agents run on demand - explicitly via `/name` or `@agent`, or the Task tool fans them out (`project-solve-cross-task` drives the designer/implementer/verifier flow, since Cursor 2.5+ supports subagent dispatch). Cursor has no plugins - per-language diagnostics come from Open-VSX extensions (install those matching the project's languages); design-taste guidance for distinctive UI lives in `angular-conventions` (its `references/design-quality.md`, installed like any Cursor skill).
 
 ---
 
@@ -141,8 +141,10 @@ STACK=~/path/to/cursor-stack    # your clone of this repo
 bash $STACK/scripts/cursor-stack.sh install
 bash $STACK/scripts/cursor-stack.sh update
 
-# Optional extras (args 2+, any order): a space (separate memory DB), install gh, context7 transport
-bash $STACK/scripts/cursor-stack.sh install work            # space 'work' -> memory_work.db
+# Optional extras (args 2+, any order): a space (separate memory DB), the memory MCP's db level, install gh, context7 transport
+bash $STACK/scripts/cursor-stack.sh install work            # space 'work' -> memory_work.db, at the scoped level
+bash $STACK/scripts/cursor-stack.sh install memory-scoped work   # explicit: scoped level, space 'work'
+bash $STACK/scripts/cursor-stack.sh install memory-project       # <repo>/.memory-mcp/memory.db, gitignored by this run
 bash $STACK/scripts/cursor-stack.sh install github-cli
 bash $STACK/scripts/cursor-stack.sh install context7-local  # local npx context7 (default: remote hosted server)
 bash $STACK/scripts/cursor-stack.sh install sentry-oauth    # sentry MCP via OAuth sign-in, no token header (default: sentry-token)
@@ -155,6 +157,7 @@ $Stack = 'C:\path\to\cursor-stack'   # your clone of this repo
 
 pwsh $Stack\scripts\cursor-stack.ps1 install
 pwsh $Stack\scripts\cursor-stack.ps1 install work          # space 'work' -> memory_work.db (positional)
+pwsh $Stack\scripts\cursor-stack.ps1 install -MemoryLevel project  # <repo>\.memory-mcp\memory.db, gitignored by this run
 pwsh $Stack\scripts\cursor-stack.ps1 install -GitHubCli    # install gh (switch)
 pwsh $Stack\scripts\cursor-stack.ps1 install -Context7 local  # local npx context7 (default: remote)
 pwsh $Stack\scripts\cursor-stack.ps1 install -SentryAuth oauth  # sentry MCP via OAuth sign-in, no token header (default: token)
@@ -171,10 +174,20 @@ For Cursor, **`install` and `update` are effectively the same**: a clean skill r
 
 ## Memory database
 
-The `memory` MCP keeps its DB under **`~/.memory-mcp`**: default `memory.db`, or
-`memory_<space>.db` with a **space** (e.g. `work`). The root is outside the project on purpose, so
-recall carries across every project you install into. The path is resolved at install time and
-baked into `.cursor/mcp.json`.
+The `memory` MCP is required, the same way `serena` is - it holds preferences, corrections, project
+facts and lessons the docs domains don't. Three levels, picked by a level word/flag
+(`memory-global`\|`memory-scoped`\|`memory-project` on the sh twin, `-MemoryLevel` on the ps1 twin):
+
+- **global** (the default when nothing is registered yet) - `~/.memory-mcp/memory.db`, shared across
+  every project you install into.
+- **scoped** - `~/.memory-mcp/memory_<space>.db` (`memory_default.db` with no space), a space (e.g.
+  `work`) named the same way as elsewhere.
+- **project** - `<repo>/.memory-mcp/memory.db`. This run writes `.memory-mcp/.gitignore` (`*`) the
+  first time, absent-only, so the db never lands in a commit.
+
+Omitting the level on a run that finds an existing registration keeps its db path byte-for-byte and
+only upgrades the rest of the entry (pin, pragmas); omitting it with nothing registered yet defaults
+to global. The path is resolved at install time and baked into `.cursor/mcp.json`.
 
 ---
 
@@ -183,7 +196,7 @@ baked into `.cursor/mcp.json`.
 | Symptom | Cause / fix |
 | ------- | ----------- |
 | MCP dies at launch with `-32000` | Node too old (use ≥ 22.12 LTS); or a stale npm cache against a freshly pinned version. |
-| `serena` / `memory` MCP missing | `uvx` not installed - install uv (see prereqs). `memory` also needs numpy, injected via `--with numpy`. |
+| `serena` / `memory` MCP missing | `uvx` not installed - install uv (see prereqs). `memory` also needs numpy, injected via `--with numpy`, and the `[sqlite]` extra for a real embedding backend (without it the server refuses to start on any db that already holds memories). |
 | `.cursor/mcp.json` or `hooks.json` not written | Python 3 missing (bash path) - on Windows the Store stub doesn't count. |
 | Hook / rule not installed | Copied from the run's source snapshot (the release archive, or a `-b main` clone if that is unreachable) - so the file must be committed + pushed to `main`. Check the `source:` line in the run's output and `.cursor/cursor-stack.stamp` for the commit actually installed. Fail-soft keeps any existing copy. |
 | "not in a git repo - skipping…" | Project scope needs a git repo. Run `git init`, or use `SCOPE=global`. |

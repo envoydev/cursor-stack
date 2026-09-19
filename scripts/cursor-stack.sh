@@ -15,9 +15,18 @@
 # components are provisioned here.
 #
 # Optional extras (args 2+, any order):
-#   space       -> any word; a separate memory DB (memory_<space>.db). Omit for the default shared
-#                  DB. The ~/.memory-mcp root sits outside the project so recall carries across every
-#                  project. (Cursor is self-contained under ~/.cursor; the space does not change that.)
+#   space       -> any word; the memory MCP's per-space DB at the 'scoped' level (memory_<space>.db) -
+#                  see memory-global | memory-scoped | memory-project below. Reserved words are matched
+#                  first, so a level word is never swallowed as the space.
+#   memory-global | memory-scoped | memory-project -> the memory MCP's db level. global (the default
+#                  when nothing is registered yet): ~/.memory-mcp/memory.db, shared across every
+#                  project. scoped: ~/.memory-mcp/memory_<space>.db (memory_default.db with no space).
+#                  project: <repo>/.memory-mcp/memory.db, gitignored by this run (.memory-mcp/.gitignore
+#                  holding '*', written only when absent). Omitted on a run that finds an existing
+#                  registration, its MCP_MEMORY_SQLITE_PATH is kept byte-for-byte and only the rest of
+#                  the entry (pin, pragmas) is upgraded; omitted with none registered, global. The
+#                  ~/.memory-mcp root sits outside the project so recall carries across every project
+#                  (Cursor is self-contained under ~/.cursor; the space/level do not change that).
 #   github-cli  -> install the GitHub CLI (gh) via Homebrew (macOS) if missing; prompts for
 #                  `gh auth login` when unauthenticated. e.g.:
 #                    bash cursor-stack.sh install github-cli
@@ -52,16 +61,18 @@ set -euo pipefail
 ACTION="${1:-}"
 case "$ACTION" in
   install|update) ;;
-  *) echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]" >&2; exit 1 ;;
+  *) echo "usage: bash $0 <install|update> [space] [memory-global|memory-scoped|memory-project] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]" >&2; exit 1 ;;
 esac
 
 # This script provisions the Cursor agent.
 AGENT="cursor"
 
-# Optional extras (args 2+, any order, each with a default): a space name (any word -> a separate
-# memory_<space>.db), 'github-cli' (install gh), 'context7-local' | 'context7-remote' (context7
-# transport; default remote).
+# Optional extras (args 2+, any order, each with a default): a space name (any word -> the memory
+# MCP's memory_<space>.db at the 'scoped' level), 'memory-global' | 'memory-scoped' | 'memory-project'
+# (the memory MCP's db level - see the header comment), 'github-cli' (install gh), 'context7-local' |
+# 'context7-remote' (context7 transport; default remote).
 SPACE=""
+MEMORY_LEVEL=""  # '' = not asked this run - keeps an existing registration's path byte-for-byte, global when none exists (resolved in set_cursor_mcps)
 INSTALL_GITHUB_CLI=false
 CONTEXT7_MODE="remote"
 SENTRY_AUTH=""        # '' = keep an existing entry's mode, token on a fresh one (resolved in set_cursor_mcps)
@@ -78,15 +89,21 @@ for extra in "${@:2}"; do
     playwright-chrome|playwright-msedge|playwright-firefox|playwright-webkit) PLAYWRIGHT_BROWSERS="$PLAYWRIGHT_BROWSERS ${extra#playwright-}" ;;
     playwright-on-chrome|playwright-on-msedge|playwright-on-firefox|playwright-on-webkit) PLAYWRIGHT_ENABLED="${extra#playwright-on-}" ;;
     skills-only) SKILLS_ONLY=true ;;
+    memory-global|memory-scoped|memory-project)
+      # Matched BEFORE the space catch-all below, so a level word is never swallowed as the space.
+      if [ -n "$MEMORY_LEVEL" ]; then
+        echo "usage: bash $0 <install|update> [space] [memory-global|memory-scoped|memory-project] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (only one memory level word; got 'memory-$MEMORY_LEVEL' and '$extra')" >&2; exit 1
+      fi
+      MEMORY_LEVEL="${extra#memory-}" ;;
     *)
-      # Any other single word is the SPACE (memory-DB namespace). Reserved flags are matched above;
-      # a second bare word, or a disallowed charset, is an error.
+      # Any other single word is the SPACE (memory-DB namespace at the 'scoped' level). Reserved flags
+      # are matched above; a second bare word, or a disallowed charset, is an error.
       if [ -n "$SPACE" ]; then
-        echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
+        echo "usage: bash $0 <install|update> [space] [memory-global|memory-scoped|memory-project] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (only one space name; got '$SPACE' and '$extra')" >&2; exit 1
       fi
       case "$extra" in
         [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*)
-          echo "usage: bash $0 <install|update> [space] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
+          echo "usage: bash $0 <install|update> [space] [memory-global|memory-scoped|memory-project] [github-cli] [context7-local|context7-remote] [sentry-token|sentry-oauth] [playwright-<engine>...] [playwright-on-<engine>] [skills-only]   (space '$extra' must start alphanumeric; chars [A-Za-z0-9._-])" >&2; exit 1 ;;
       esac
       SPACE="$extra" ;;
   esac
@@ -266,7 +283,16 @@ SKILLS=(
 #     \${CLAUDE_PROJECT_DIR:-.} / \${CLAUDE_CONFIG_DIR} are the shared-baseline path tokens carried
 #       verbatim from the shared MCPS baseline; Cursor does no shell interpolation, so both are
 #       resolved to concrete paths when .cursor/mcp.json is written (see write_mcp_json).
-#     memory (mcp-memory-service): a space (e.g. 'work') switches to memory_<space>.db.
+#     memory (mcp-memory-service): the level word (memory-global default | memory-scoped | memory-project)
+#       picks the db path; a space (e.g. 'work') only matters at the scoped level (memory_<space>.db).
+#       The [sqlite] extra (not the bare package) is REQUIRED - without it the server has no real
+#       embedding backend and refuses to start on any db that already holds memories (works once, on an
+#       empty db, then breaks every later launch). [sqlite] gives ONNX embeddings (384-dim, same vectors
+#       the peer stack's install writes) with no torch/sentence-transformers weight. Pin syntax is
+#       `pkg[extra]==version`, not `pkg[extra]@version` - uvx's `@version` shorthand does not compose
+#       with an extra. MCP_MEMORY_SQLITE_PRAGMAS=busy_timeout=15000 raises the service's 5000ms default
+#       so two processes sharing one db (this install and the peer stack's, say) wait out a write
+#       instead of failing SQLITE_BUSY.
 #
 # PERFORMANCE - network resolution is the cost of a slow new-session start, so it happens HERE
 # (install/update), never at launch:
@@ -302,11 +328,25 @@ fi
 CTX7_PIN="${MCP_CONTEXT7_VER:+@$MCP_CONTEXT7_VER}"
 PW_PIN="${MCP_PLAYWRIGHT_VER:+@$MCP_PLAYWRIGHT_VER}"
 SERENA_PIN="${MCP_SERENA_VER:+@$MCP_SERENA_VER}"
-MEMORY_PIN="${MCP_MEMORY_VER:+@$MCP_MEMORY_VER}"
+# memory's pin uses '==' (PEP 508 requirement syntax), not the '@version' shorthand the other pins
+# use above - uvx's `--from pkg@version` shorthand does not compose with the '[sqlite]' extra. Plain
+# parameter expansion, not `[ -n ... ] && MEMORY_PIN=...`: under this script's `set -e`, a standalone
+# `&&` statement whose left side is false aborts the whole run.
+MEMORY_PIN="${MCP_MEMORY_VER:+==$MCP_MEMORY_VER}"
+MEMORY_SPEC="mcp-memory-service[sqlite]${MEMORY_PIN}"
 
-MEMORY_BACKEND="sqlite_vec"; MEMORY_DB_FILE="memory.db"
-if [ -n "$SPACE" ]; then MEMORY_DB_FILE="memory_$SPACE.db"; fi  # space -> per-space DB; backend stays sqlite_vec (the only valid local backend)
-MEMORY_ENTRY="memory|-e MCP_MEMORY_STORAGE_BACKEND=$MEMORY_BACKEND -e MCP_MEMORY_SQLITE_PATH=@HOME_MEMORY_DIR@/$MEMORY_DB_FILE -- uvx --with numpy --from mcp-memory-service${MEMORY_PIN} memory server"
+MEMORY_BACKEND="sqlite_vec"
+MEMORY_PRAGMAS="busy_timeout=15000"
+# MEMORY_LEVEL is '' when the run named no level word - set_cursor_mcps keeps an existing
+# registration's MCP_MEMORY_SQLITE_PATH byte-for-byte in that case and only upgrades the rest of the
+# entry; the path built here is only what a FRESH (nothing registered yet) install actually gets, and
+# it defaults to global exactly like an explicit 'memory-global' would.
+case "$MEMORY_LEVEL" in
+  scoped) MEMORY_DB_PATH="@HOME_MEMORY_DIR@/memory_${SPACE:-default}.db" ;;
+  project) MEMORY_DB_PATH='${CLAUDE_PROJECT_DIR:-.}/.memory-mcp/memory.db' ;;  # single-quoted: stays literal for set_cursor_mcps' own token substitution
+  *) MEMORY_DB_PATH="@HOME_MEMORY_DIR@/memory.db" ;;
+esac
+MEMORY_ENTRY="memory|-e MCP_MEMORY_STORAGE_BACKEND=$MEMORY_BACKEND -e MCP_MEMORY_SQLITE_PATH=$MEMORY_DB_PATH -e MCP_MEMORY_SQLITE_PRAGMAS=$MEMORY_PRAGMAS -- uvx --with numpy --from $MEMORY_SPEC memory server"
 
 # context7 runs REMOTE (the hosted server) by DEFAULT - no local process, and the key stays out of
 # .cursor/mcp.json: set CONTEXT7_API_KEY as an OS/user environment variable and Cursor expands
@@ -330,7 +370,7 @@ MCPS=(
   "chrome-devtools|-- npx chrome-devtools-mcp@latest" # OPT-IN browser/extension debug; drives a full Chrome (heavy) - comment out outside web projects; no WS-frame payloads; pin a version
   "appium-mcp|-- npx -y appium-mcp@latest" # OPT-IN native mobile E2E (official Appium MCP); embedded UiAutomator2/XCUITest drivers, needs Xcode and/or Android SDK + Java (heavy) - comment out outside Capacitor/Ionic mobile projects; pin a version
   "sentry|@HTTP@" # OPT-IN Sentry error monitoring - hosted remote MCP (mcp.sentry.dev); auth via an Authorization: Sentry-Bearer ${env:SENTRY_ACCESS_TOKEN} header in .cursor/mcp.json (OS env), or no header under 'sentry-oauth'; comment out where the project has no Sentry
-  "$MEMORY_ENTRY"  # memory: cross-project recall - the subagent handoff runs on serena; comment out in a standalone project
+  "$MEMORY_ENTRY"  # memory: shared cross-project recall (required, like serena) - preferences, corrections and lessons the docs domains don't hold
   "$CONTEXT7_ENTRY"                           # up-to-date library/framework/SDK docs (beats recalled API knowledge)
 )
 
@@ -355,6 +395,14 @@ MCPS=(
 #                                   answer allow/deny, with no channel to inject context, so a dispatched
 #                                   subagent reads the generated baseline-project-architecture.mdc pointer rule
 #                                   instead of the docs hook's push.
+#   - memory-session             -> sessionStart (pushes the memory MCP's own stored preferences,
+#                                   corrections, project facts and lessons into the session, newest
+#                                   first, own-project then global then related-project, capped at 4KB).
+#                                   Ships its engine, memory.js, beside it (copied, never itself wired
+#                                   to an event - same split as docs-session/docs.js). Silent whenever
+#                                   nothing can be shown (no memory server registered, an empty
+#                                   selection, node:sqlite unavailable below Node 22.13) - never blocks
+#                                   a session start.
 # Two guards do NOT map onto Cursor's hook surface: a stop-contract gate (the stop hook cannot block
 # and never sees the response text, and there is no question tool to gate) and usage instrumentation
 # (its analyzer reads a transcript format Cursor does not produce).
@@ -373,6 +421,7 @@ CURSOR_HOOKS=(
   "docs-session.js::sessionStart"
   "docs-session.js::preToolUse"
   "docs-session.js::stop"
+  "memory-session.js::sessionStart"
 )
 # A rule entry is "name" (copied from the source clone's rules/) or "name|url" (fetched from that
 # url - the form for a third-party rule we would reference rather than vendor; currently unused,
@@ -385,6 +434,7 @@ CURSOR_RULES=(
   "baseline-git.mdc"
   "baseline-navigation.mdc"
   "baseline-docs-root.mdc"               # generated-docs root resolution (CURSOR_DOCS_PATH)
+  "baseline-memory.mdc"                  # what belongs in the shared memory MCP vs the docs domains
   # Path-scoped routing
   "markdown-docs.mdc"                    # markdown-style routing, path-scoped **/*.md
   "javascript-conventions.mdc"           # JS-family conventions, path-scoped js/jsx/mjs/cjs
@@ -632,7 +682,7 @@ set_cursor_mcps() {
 
   local prog; prog=$(cat <<'PY'
 import json, os, sys
-path, action, sentry_auth, pw_browsers, pw_enabled = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5]
+path, action, sentry_auth, pw_browsers, pw_enabled, mem_level = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].split(), sys.argv[5], sys.argv[6]
 # Refuse a file that parses to the wrong shape rather than falling back to {} - that would REPLACE
 # whatever the project already has in mcp.json with just the stack's own servers. An array, string,
 # number or boolean all parse fine, and data.setdefault below would then throw on any of them
@@ -747,6 +797,13 @@ for name, spec in lines:
             i += 1
     if cmd is None:
         continue
+    # memory, no level word this run: keep the EXISTING registration's db path byte-for-byte (a level
+    # word always wins outright) and only upgrade the rest of the entry (command/args/pin/pragmas) -
+    # so a plain `update` never silently relocates a project's or a space's memories to global.
+    if name == "memory" and not mem_level and old is not None:
+        old_path = (old.get("env") or {}).get("MCP_MEMORY_SQLITE_PATH")
+        if old_path:
+            env["MCP_MEMORY_SQLITE_PATH"] = old_path
     server = {"command": cmd, "args": cmd_args}
     if env:
         server["env"] = env
@@ -760,8 +817,41 @@ PY
   # keeps that exit from taking the whole install down under `set -euo pipefail` - without it the
   # pipeline's failure aborts the script here, before migrate_docs_domains ever runs, which is the
   # exact bug this fix removes.
-  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED" || log "  !! mcp.json wiring failed - left untouched"
+  printf '%s\n' "${resolved[@]}" | python3 -c "$prog" "$mcp_path" "$ACTION" "$SENTRY_AUTH" "$PLAYWRIGHT_BROWSERS" "$PLAYWRIGHT_ENABLED" "$MEMORY_LEVEL" || log "  !! mcp.json wiring failed - left untouched"
   ensure_playwright_browser "$mcp_path"
+  ensure_memory_gitignore "$mcp_path" "$proj_dir"
+}
+
+# After set_cursor_mcps has written (or left untouched) mcp.json, keep a project-level memory db out of
+# git the same way every other stack-generated, machine-local artifact is called out - a printed
+# reminder alone (see the end-of-run summary) is not enough for a folder holding personal recall notes,
+# so this one writes its OWN .gitignore, absent-only, touching nothing but that one file. Reads the
+# path back from the WRITTEN file rather than from $MEMORY_LEVEL, so a plain `update` that kept an
+# existing project-level path byte-for-byte (no level word this run) is covered too, not just a fresh
+# `memory-project` install.
+ensure_memory_gitignore() {
+  local mcp_path="$1" proj_dir="$2" db_path gitignore_dir
+  command -v python3 >/dev/null 2>&1 || return 0
+  db_path="$(python3 -c '
+import json, sys
+try:
+    servers = json.load(open(sys.argv[1])).get("mcpServers") or {}
+except Exception:
+    sys.exit(0)
+print(((servers.get("memory") or {}).get("env") or {}).get("MCP_MEMORY_SQLITE_PATH") or "")' "$mcp_path" 2>/dev/null)"
+  [ -n "$db_path" ] || return 0
+  case "$db_path" in
+    "$proj_dir/.memory-mcp/"*)
+      gitignore_dir="$proj_dir/.memory-mcp"
+      if [ ! -f "$gitignore_dir/.gitignore" ]; then
+        if mkdir -p "$gitignore_dir" 2>/dev/null && printf '*\n' > "$gitignore_dir/.gitignore" 2>/dev/null; then
+          log "  cursor memory: .memory-mcp/.gitignore written (project-level db kept out of git)"
+        else
+          log "  !! could not write $gitignore_dir/.gitignore"
+        fi
+      fi
+      ;;
+  esac
 }
 
 # firefox / webkit are Playwright's own builds, not a browser the machine already has: download each one
@@ -836,6 +926,20 @@ set_cursor_hooks() {
         else cp "$src" "$hooks_dir/docs.js"; chmod +x "$hooks_dir/docs.js"; log "  cursor hook copied -> docs.js"; fi
       else
         [ -f "$hooks_dir/docs.js" ] || log "  !! not in source and no local copy: docs.js - skipping"
+      fi
+      ;;
+  esac
+
+  # memory-session.js requires('./memory.js') from its own directory - the engine is copied beside it,
+  # never itself wired to an event (same content-compare-then-skip as the loop above and the docs.js copy).
+  case " ${CURSOR_HOOKS[*]} " in
+    *" memory-session.js::"*)
+      src="$SOURCE_DIR/hooks/memory.js"
+      if [ -n "$SOURCE_DIR" ] && [ -f "$src" ]; then
+        if [ -f "$hooks_dir/memory.js" ] && cmp -s "$src" "$hooks_dir/memory.js"; then log "  cursor hook current: memory.js"
+        else cp "$src" "$hooks_dir/memory.js"; chmod +x "$hooks_dir/memory.js"; log "  cursor hook copied -> memory.js"; fi
+      else
+        [ -f "$hooks_dir/memory.js" ] || log "  !! not in source and no local copy: memory.js - skipping"
       fi
       ;;
   esac
@@ -1093,4 +1197,5 @@ Add these stack-generated, machine-local artifacts to the project's .gitignore (
   .cursor          Cursor stack: skills + mcp.json + hooks.json + hook scripts + rules + install stamp
   .slopwatch       dotnet-slopwatch output
   .playwright      playwright MCP user-data-dir + screenshots
+  .memory-mcp      memory MCP db at the 'project' level only (global/scoped live under ~/.memory-mcp) - this run already wrote its own .gitignore inside that folder, so nothing further is needed there
 GITIGNORE

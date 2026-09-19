@@ -412,3 +412,19 @@ test('a 500-row database selects in well under 1s', { skip: skipNoSqlite }, () =
     assert.ok(counts.own > 0 && counts.related > 0 && counts.preference > 0);
   } finally { rmDir(dir); }
 });
+
+// The engine loaded with path.win32 in place of path, so the Windows spelling rules are pinned on every
+// CI platform: separators, a drive letter in another case, a '/'-spelled registration from the installer.
+test('win32: a registration spelled with forward slashes or a drive letter in another case still maps to its level', () => {
+  const file = path.join(__dirname, '..', 'hooks', 'memory.js');
+  const mod = { exports: {} };
+  const req = (name) => (name.replace(/^node:/, '') === 'path' ? path.win32 : require(name));
+  const src = fs.readFileSync(file, 'utf8').replace(/^#!.*\n/, '');
+  new Function('require', 'module', 'exports', '__filename', '__dirname', src)(req, mod, mod.exports, file, path.dirname(file));
+  const w = mod.exports;
+  const opts = { home: 'C:\\Users\\dev', projectRoot: 'c:\\work\\app' };
+  assert.strictEqual(w.levelOfPath('C:/Users/dev/.memory-mcp/memory.db', opts), 'global');
+  assert.strictEqual(w.levelOfPath('c:\\users\\DEV\\.memory-mcp\\memory_work.db', opts), 'scoped');
+  assert.strictEqual(w.levelOfPath('C:/work/app/.memory-mcp/memory.db', opts), 'project');
+  assert.strictEqual(w.levelOfPath('C:/elsewhere/.memory-mcp/memory.db', opts), null);
+});

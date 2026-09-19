@@ -26,12 +26,15 @@ function pathForLevel(level, { home, space, projectRoot } = {}) {
 
 // The inverse of pathForLevel - null for a path matching none of the three shapes exactly (not a
 // substring or prefix match: a foreign path is never mistaken for one of ours).
+// Compared as KEYS: normalised, and case-folded on Windows only, where names are case-insensitive - the
+// installer writes git's 'C:/...' while a workspace root can arrive as 'c:\...', and those are one folder.
+const pathKey = (p) => { const n = path.normalize(String(p)); return path.sep === '\\' ? n.toLowerCase() : n; };
 function levelOfPath(dbPath, { home, projectRoot } = {}) {
-  const norm = path.normalize(String(dbPath));
-  if (projectRoot && norm === path.join(projectRoot, '.memory-mcp', 'memory.db')) return 'project';
+  const norm = pathKey(dbPath);
+  if (projectRoot && norm === pathKey(path.join(projectRoot, '.memory-mcp', 'memory.db'))) return 'project';
   if (home) {
-    const dir = path.join(home, '.memory-mcp');
-    if (norm === path.join(dir, 'memory.db')) return 'global';
+    const dir = pathKey(path.join(home, '.memory-mcp'));
+    if (norm === pathKey(path.join(dir, 'memory.db'))) return 'global';
     if (path.dirname(norm) === dir && /^memory_[^/\\]+\.db$/.test(path.basename(norm))) return 'scoped';
   }
   return null;

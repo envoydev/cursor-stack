@@ -8,3 +8,8 @@ node_modules/
 # Session gate receipts (COMMIT-GATE, PUSH-GATE, APPROVAL) a local run writes under the docs root -
 # per-session state, never repo content.
 .cursor/docs/flow/
+
+# Superpowers session scratch (plans, specs, run reports). The tooling assumes this directory is
+# ignored; this repo never got the entry, so it sat untracked and naming local absolute paths, one
+# `git add -A` away from a public commit.
+.superpowers/

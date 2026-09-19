@@ -296,6 +296,26 @@ function preToolUse(input, root, docs, state) {
 // another domain holds a same-named file, silently to the WRONG domain's copy) instead of being recognised
 // as a decision a person owns. Two lists, capped separately: an ask offers a rewrite, a warning offers
 // none, and they must never compete for the same slot.
+// An ask goes into the answer as `docs.js show <ref>`, so the ref it carries has to be one the engine can
+// actually resolve. A watch entry's sections are stored VERBATIM, and the bare 'patterns#orders' that every
+// watch.json written before domains existed holds turns ambiguous the moment a second domain owns a
+// references/patterns.md of its own - which is ordinary, since every domain owns a references/ folder.
+// parseRef then refuses ('patterns#orders is in architecture and code-style - name one'), and the ask hands
+// the user a command that cannot work. The entry's own domain is what disambiguates it, exactly as it does
+// at lint. The BARE spelling is preferred so an unambiguous entry keeps printing the short form it prints
+// today; the domain-qualified one is the fallback, and an id neither spelling resolves is passed through
+// unchanged (there is nothing better to say, and the ask still names the section the watch entry named).
+// Guarded like docs.protectedRef above: an older docs.js copy beside this hook exports no findSection, and
+// the safe degradation there is the verbatim id this hook has always emitted, never a throw.
+const askRefOf = (docs, domain, id) => {
+  try {
+    if (typeof docs.findSection !== 'function') return id;
+    if (docs.findSection(id)) return id;
+    const qualified = `${domain}/${id}`;
+    return docs.findSection(qualified) ? qualified : id;
+  } catch { return id; }
+};
+
 function splitHits(docs, hits, limit) {
   const seenAsk = new Set();
   const seenWarn = new Set();
@@ -309,7 +329,10 @@ function splitHits(docs, hits, limit) {
         if (warnings.length < limit && !seenWarn.has(warn.id)) { seenWarn.add(warn.id); warnings.push(warn); }
         continue;
       }
-      if (asks.length < limit && !seenAsk.has(id)) { seenAsk.add(id); asks.push(id); }
+      // Deduped on the RESOLVED ref, not the stored one: two entries naming the same section in the two
+      // spellings are one ask, and the cap counts it once.
+      const ask = askRefOf(docs, h.domain, id);
+      if (asks.length < limit && !seenAsk.has(ask)) { seenAsk.add(ask); asks.push(ask); }
     }
   }
   return { asks, warnings };

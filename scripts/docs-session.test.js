@@ -516,9 +516,54 @@ test('a bare watch entry ambiguous across two domains is asked about by the hook
     start(r, s);
     r.write('src/Api/Orders/Refund.cs', 'class Refund { int Cap; }\n');
     const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
-    assert.match(followup, /which this section owns: patterns#orders/, 'the hook still asks about the entry');
+    assert.match(followup, /which this section owns: \S*patterns#orders/, 'the hook still asks about the entry');
     const out = r.cli(['lint']);
     assert.doesNotMatch(out.stdout, /names a section that does not exist/, `lint must resolve what the engine can resolve:\n${out.stdout}`);
     assert.strictEqual(out.status, 0, out.stdout);
+  } finally { r.rm(); }
+});
+
+// The same ambiguity on the ASK side, which domains are what created: a watch entry's sections are stored
+// verbatim, so a bare 'patterns#orders' went straight into `docs.js show patterns#orders` - a command
+// parseRef then refuses ('patterns#orders is in architecture and code-style - name one'). A correct ask
+// rendered unusable. Asserted by RUNNING the command the ask prints, never by matching its text: the only
+// thing that matters is that the ref resolves, and a string assertion would pass on a ref that does not.
+test('the ref the finish ask prints resolves, even when the stored spelling is ambiguous', () => {
+  const r = repo({ files: { 'src/Api/Orders/Refund.cs': 'class Refund {}\n' }, docs: { 'references/patterns.md': PATTERNS } });
+  try {
+    r.write('.claude/docs/architecture/watch.json', JSON.stringify({
+      sourceRoots: ['src'],
+      watch: [{ kind: 'orders', globs: ['src/Api/Orders/**'], sections: ['patterns#orders'] }],
+    }));
+    r.write('.claude/docs/code-style/watch.json', '{}');
+    r.write('.claude/docs/code-style/references/patterns.md', section('orders', '', 'Style patterns live here.'));
+    const s = sid();
+    start(r, s);
+    r.write('src/Api/Orders/Refund.cs', 'class Refund { int Cap; }\n');
+    const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
+    const m = /Open (?:it|them): .*?docs\.js show (.+)/.exec(followup);
+    assert.ok(m, `the ask must offer a show command:\n${followup}`);
+    const refs = m[1].trim().split(/\s+/);
+    assert.ok(refs.length, 'at least one ref is offered');
+    for (const ref of refs) {
+      const shown = r.cli(['show', ref]);
+      assert.strictEqual(shown.status, 0, `the ask printed a ref the engine refuses: ${ref}\n${shown.stdout}${shown.stderr}`);
+      assert.doesNotMatch(shown.stdout, /name one, as <domain>\//, `the ask printed an ambiguous ref: ${ref}\n${shown.stdout}`);
+      assert.match(shown.stdout, /Refunds are ledgered before the payment call\./, `and it must resolve to the watching domain's own section, never another domain's same-named file:\n${shown.stdout}`);
+    }
+  } finally { r.rm(); }
+});
+
+// The unambiguous case keeps the SHORT spelling it prints today: the qualified form is a fallback, not a
+// rewrite of every ask.
+test('an unambiguous entry still prints its bare ref', () => {
+  const r = repo({ files: { 'src/Api/Program.cs': 'app.Run();\n' }, docs: { 'references/patterns.md': PATTERNS, 'watch.json': WATCH() } });
+  try {
+    const s = sid();
+    start(r, s);
+    r.write('src/Api/Program.cs', 'app.UseAuth();\napp.Run();\n');
+    const followup = JSON.parse(r.hook(stopEv(s)).stdout).followup_message;
+    assert.match(followup, /docs\.js show patterns#orders$/m, `the short form is kept:\n${followup}`);
+    assert.strictEqual(r.cli(['show', 'patterns#orders']).status, 0);
   } finally { r.rm(); }
 });

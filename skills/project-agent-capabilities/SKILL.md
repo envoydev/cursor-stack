@@ -89,11 +89,11 @@ Captured: <YYYY-MM-DD> from <stack version>@<short-sha> (the install stamp's, or
   one chat tripled the per-message context, and one post-idle question alone re-paid
   465k tokens of cache rebuild).
 - Every doc the assistant creates lands under the docs root (`<docs-path>`), in its owned
-  folder: `architecture/`, `test-coverage/`, `loops/` - and `related-context/` for anything
-  tied to a sibling repo (the orientation doc `related-context/PROJECT-RELATED-CONTEXT.md`
-  plus cross-repo plans, change requests, issue notes, run recipes; look there before
-  re-deriving sibling state). A doc outside the root takes the user's approval, asked
-  first - never silently.
+  folder: `architecture/`, `test-coverage/`, `loops/` - and `related-projects/` for the
+  sibling-repo orientation doc (`related-projects/RELATED-PROJECTS.md`), with the plain folder
+  `related-context/` alongside it for every OTHER sibling-repo doc (cross-repo plans, change
+  requests, issue notes, run recipes; look there before re-deriving sibling state). A doc outside
+  the root takes the user's approval, asked first - never silently.
 
 ## Orchestration skills (slash-only - invisible until invoked)
 <one ROUTER row per slash-only skill: `/name - <first clause, max 120 chars>`>

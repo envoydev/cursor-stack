@@ -33,8 +33,41 @@ const docsRootEnv = () => process.env.CURSOR_DOCS_PATH || process.env.CLAUDE_STA
 const DOCS_ROOT = path.resolve(ROOT, docsRootEnv());
 const DOCS = path.join(DOCS_ROOT, 'architecture');
 const BLOCK_FILE = path.join(DOCS, 'ORIENTATION.md');
-const WATCH_FILE = path.join(DOCS, 'watch.json');
 const BRANCHES = path.join(DOCS_ROOT, '.branches');
+// A domain is a top-level folder under the docs root holding a watch.json. Convention, not a registry:
+// adding one needs no engine change. A dotted folder is never a domain - .branches is state, not docs.
+// 'references' and 'history' are reserved and never a domain either: every domain owns a subfolder by
+// each name, so a domain sharing that name would make a bare ref's leading segment ambiguous between
+// the two.
+// Cached like the git-state probes below: parseRef calls this on every bare reference, and the docs root
+// does not gain a domain mid-process. resetDomains() below is the escape hatch a fixture needs when it
+// adds a domain after the module was already required.
+const RESERVED_DOMAIN_NAMES = new Set(['references', 'history']);
+let DOMAINS_CACHE;
+const domains = () => {
+  if (DOMAINS_CACHE) return DOMAINS_CACHE;
+  try {
+    const found = fs.readdirSync(DOCS_ROOT, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !RESERVED_DOMAIN_NAMES.has(e.name))
+      .map((e) => e.name)
+      .filter((n) => fs.existsSync(path.join(DOCS_ROOT, n, 'watch.json')));
+    // 'architecture' counts even without a watch.json of its own: it was the one docs folder long
+    // before watch.json (or domains) existed, so every doc written before domains existed lives there
+    // regardless. Grandfathered in this ONE place so docFiles/findFile/parseRef all agree instead of
+    // three different answers for one file - a migration seeding a watch.json into every architecture/
+    // that lacks one is the thing that would delete this line.
+    if (!found.includes('architecture') && fs.existsSync(path.join(DOCS_ROOT, 'architecture'))) found.push('architecture');
+    return (DOMAINS_CACHE = found.sort());
+  } catch { return []; }
+};
+const domainDir = (name) => path.join(DOCS_ROOT, name);
+// watchOf below reads and parses one domain's watch.json; domainFiles calls it (through notOwnedOf) on
+// every file it lists, so an uncached watchOf is one read per domain per domainFiles call. Cached the
+// same way as DOMAINS_CACHE, for the same reason (a process runs one CLI command or one hook event; the
+// docs root does not change underfoot) and cleared by the same resetDomains(), which a fixture that
+// rewrites watch.json after require() must call again to see the new content.
+let WATCH_CACHE;
+const resetDomains = () => { DOMAINS_CACHE = undefined; WATCH_CACHE = undefined; };
 const MAINLINE = ['develop', 'main', 'master', 'trunk'];
 const MAX_SECTION_CHARS = 6000;
 const SHOW_CHARS = 14000;
@@ -395,23 +428,87 @@ const overlayDir = () => {
   return overlayClash(dir, b) ? null : dir;
 };
 
+// One domain's own files - root, references/, history/ - the shape every domain is read from. A file
+// the domain's own watch.json (or, for architecture, the ORIENTATION.md default folded in below) lists
+// under notOwned never counts as one of them: never sectioned, never overlaid, never a lint target.
+function domainFiles(d) {
+  const out = [];
+  const skip = notOwnedOf(d);
+  const add = (dir, prefix) => {
+    if (!fs.existsSync(dir)) return;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.md') || f === 'BRANCH-DELTA.md') continue;
+      if (skip.length && matches(skip, prefix ? `${prefix}/${f}` : f)) continue;
+      out.push(path.join(dir, f));
+    }
+  };
+  const dir = domainDir(d);
+  add(dir, '');
+  add(path.join(dir, 'references'), 'references');
+  add(path.join(dir, 'history'), 'history');
+  return out;
+}
+// Every domain's own files - domains() already grandfathers 'architecture' in, so this needs no
+// special case of its own.
 function docFiles() {
   const out = [];
-  const add = (dir) => {
-    if (!fs.existsSync(dir)) return;
-    for (const f of fs.readdirSync(dir)) if (f.endsWith('.md') && f !== 'ORIENTATION.md' && f !== 'BRANCH-DELTA.md') out.push(path.join(dir, f));
-  };
-  add(DOCS);
-  add(path.join(DOCS, 'references'));
-  add(path.join(DOCS, 'history'));
+  for (const d of domains()) out.push(...domainFiles(d));
   return out.sort();
 }
-const relKey = (file) => path.relative(DOCS, file).replace(/\.md$/, '').split(path.sep).join('/');
+// The domain a file belongs to - its own name, so relKey measures from the right base and a collision
+// can name every domain that holds it. Falls back to 'architecture' only if somehow no domain claims the
+// file at all, which should not happen now that domains() grandfathers it in.
+const fileDomain = (file) => domains().find((d) => !path.relative(domainDir(d), file).startsWith('..')) || 'architecture';
+const fileDomainDir = (file) => domainDir(fileDomain(file));
+const relKey = (file) => path.relative(fileDomainDir(file), file).replace(/\.md$/, '').split(path.sep).join('/');
 const key = (file) => path.basename(file, '.md');
+// A file's key, qualified by its own domain - what a 'Known:' hint prints, so two domains holding the
+// same basename read as two distinguishable names rather than one repeated twice.
+const knownKey = (f) => `${fileDomain(f)}/${relKey(f)}`;
+// A collision refuses rather than picks: docFiles() now spans every domain, and two domains can hold a
+// same-relKey file (every domain owns a references/ subfolder, and a shared topic name there is
+// ordinary) - a silent first-match would write a section into the wrong domain, the same failure
+// parseRef exists to prevent. Delegating to parseRef keeps a bare key resolving exactly the same way
+// under show/toc/conflictView as it already does under set.
 const findFile = (fileKey) => {
-  const files = docFiles();
-  return files.find((f) => relKey(f) === fileKey) || files.find((f) => key(f) === fileKey || path.basename(f) === fileKey);
+  const parsed = parseRef(fileKey);
+  if (!parsed.domain) return undefined;
+  const file = path.join(domainDir(parsed.domain), parsed.file);
+  return domainFiles(parsed.domain).includes(file) ? file : undefined;
 };
+// A trailing '.md' is one of the three spellings docs-session.js documents to users as equivalent
+// ('patterns#orders', 'references/patterns#orders', 'patterns.md#orders') - stripped once, here, so every
+// caller that peels a '.md' off a file key agrees on what counts.
+const stripMd = (s) => String(s).replace(/\.md$/, '');
+// A ref is <domain>/<file>#<id>. A leading segment names a domain only when domains() actually has it -
+// so a domain's own references/ or history/ subfolder (and a typo of a real domain name) is never
+// mistaken for one. Everything else is the BARE <file>#<id> - subfolder path and all - which keeps
+// working while exactly one domain holds a file matching it, wherever that domain keeps it (root,
+// references/ or history/): every doc, logged row and message written before domains existed uses this
+// spelling. Ambiguity is an error naming every candidate; a slash that resolves to no domain at all is an
+// error too - a silent pick, or a silent null, would write a section into the wrong domain (or into one
+// that was never named).
+function parseRef(ref) {
+  const s = String(ref);
+  const slash = s.indexOf('/');
+  const first = slash < 0 ? null : s.slice(0, slash);
+  const isDomain = Boolean(first) && domains().includes(first);
+  const bare = isDomain ? s.slice(slash + 1) : s;
+  // relKey and key are both already extension-stripped, so the lookup strips it here too, once, rather
+  // than a second explicit tier the way findFile used to carry on its own.
+  const fileKey = stripMd(bare.split('#')[0]);
+  if (!fileKey) throw new Error(`not a section ref: ${JSON.stringify(ref)} - want <file>#<id> or <domain>/<file>#<id>`);
+  const findIn = (d) => domainFiles(d).find((f) => relKey(f) === fileKey || key(f) === fileKey);
+  if (isDomain) {
+    const found = findIn(first);
+    return { domain: first, file: found ? `${relKey(found)}.md` : `${fileKey}.md`, id: bare };
+  }
+  const matched = domains().map((d) => ({ d, f: findIn(d) })).filter((m) => m.f);
+  if (matched.length > 1) throw new Error(`${bare} is in ${matched.map((m) => m.d).join(' and ')} - name one, as <domain>/${bare}`);
+  if (!matched.length && first) throw new Error(`no domain or subfolder resolves ${bare} - name one, as <domain>/${bare}`);
+  const [hit] = matched;
+  return { domain: hit ? hit.d : null, file: hit ? `${relKey(hit.f)}.md` : `${fileKey}.md`, id: bare };
+}
 const safeRead = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch { return ''; } };
 const isHistory = (file) => relKey(file).startsWith('history/') || HISTORY.test(safeRead(file).slice(0, 600));
 
@@ -461,7 +558,7 @@ function withStamp(text, stamp) {
 
 function sectionOverrides(file, dir) {
   if (!dir) return new Map();
-  const sdir = path.join(dir, ...relKey(file).split('/'));
+  const sdir = path.join(dir, fileDomain(file), ...relKey(file).split('/'));
   if (!fs.existsSync(sdir)) return new Map();
   return new Map(fs.readdirSync(sdir, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => [e.name.slice(0, -3), path.join(sdir, e.name)]));
 }
@@ -530,7 +627,8 @@ function sections(file) {
 // the branch's own; on mainline, name the branch whose promote conflicted.
 function conflictView(ref, branchName) {
   const [fileKey, id] = String(ref).split('#');
-  const file = findFile(fileKey);
+  let file;
+  try { file = findFile(fileKey); } catch (e) { return e.message; }
   if (!file || !id) return `name a section: show <file>#<id> --conflict [branch]`;
   const dir = branchName ? path.join(BRANCHES, safe(branchName)) : overlayDir();
   const label = branchName || branch() || 'branch';
@@ -676,12 +774,31 @@ function readMetaAt(dir) {
 }
 const readMeta = (name) => readMetaAt(path.join(BRANCHES, name));
 
-const overlayParts = (file, id) => [...relKey(file).split('/'), `${id}.md`];
+// The domain goes first: two domains can hold the same relKey (every domain owns a references/ folder, and a
+// shared topic name there is ordinary), so without it their overrides, bases and conflict markers would land on
+// the same path and the second write would silently erase the first.
+const overlayParts = (file, id) => [fileDomain(file), ...relKey(file).split('/'), `${id}.md`];
 
 function set(ref, newText) {
   const [fileKey, sec] = String(ref).split('#');
   if (!sec) return { error: 'name one section: set <file>#<id> - whole-file writes are not supported' };
-  const file = findFile(fileKey);
+  // Resolved separately from findFile below: a notOwned file is excluded from domainFiles (never
+  // sectioned), so findFile alone cannot tell 'unowned' apart from 'no such file'. parseRef names the
+  // domain when the ref itself is domain-qualified (<domain>/<file>#<id>), whatever domainFiles says -
+  // but a BARE ref cannot fall back the same way: parseRef's own domain search runs over domainFiles,
+  // which has already excluded the file, so a bare ref to one resolves no domain at all. notOwnedMatch
+  // covers that spelling too, over every domain's notOwnedOf, so the refusal is not qualified-spelling-only.
+  let parsed;
+  try { parsed = parseRef(fileKey); } catch (e) { return { error: e.message }; }
+  if (parsed.domain && matches(notOwnedOf(parsed.domain), parsed.file)) {
+    return { error: `${parsed.file} is maintained by another skill - this engine does not write it` };
+  }
+  if (!parsed.domain) {
+    const bare = notOwnedMatch(fileKey);
+    if (bare) return { error: `${bare.file} is maintained by another skill - this engine does not write it` };
+  }
+  let file;
+  try { file = findFile(fileKey); } catch (e) { return { error: e.message }; }
   if (!file) return { error: `no such doc file: ${fileKey}` };
   if (!/^[\w.-]+$/.test(sec)) return { error: `not a valid section id: ${sec}` };
   if (!String(newText).trim()) return { error: 'empty section text: nothing written' };
@@ -776,9 +893,71 @@ function allSections() {
   return docFiles().flatMap((f) => sections(f));
 }
 
+// The section's FIRST SENTENCE, capped at QUOTE_CHARS: a protected-section warning quotes it so there is
+// something concrete to read against, and a section that grew to 6000 chars must not grow the warning with it.
+const QUOTE_CHARS = 200;
+function firstSentence(text) {
+  const body = norm(text).split('\n').slice(1).find((l) => l.trim() && !COMMENT.test(l)) || '';
+  const m = /^(.*?[.!?])(\s|$)/.exec(body.trim());
+  const one = (m ? m[1] : body).trim();
+  return one.length > QUOTE_CHARS ? `${one.slice(0, QUOTE_CHARS - 3)}...` : one;
+}
+
+// Resolves a watch.json sections entry (bare or <domain>/<file>#<id>) to the section object it names - what
+// lint's existence check and docs-session.js's finish-ask both need. This engine carries no askRef/hash - the
+// finish-ask '--expect' conflict check that pairs with those in claude-stack was never ported here (Cursor's
+// simpler stop() nudge does not need it, see hooks/docs-session.js) - so this is the minimal resolution both
+// callers share, in place of askRef.
+function findSection(ref) {
+  const [fileKey, sec] = String(ref).split('#');
+  if (!sec) return null;
+  let file;
+  try { file = findFile(fileKey); } catch { return null; }
+  if (!file) return null;
+  return sections(file).find((s) => s.id === `${key(file)}#${sec}`) || null;
+}
+
+// A section in a file the DOMAIN declares notOwned - findSection's opposite number: that file carries no
+// parsed sections at all (notOwnedOf excludes it from domainFiles, which is what makes the write refusal
+// hold at every path - see set() above), so there is nothing for findSection to have found. This reads the
+// file directly, off mainline only, for QUOTING alone: nothing here is a write path, and a protected file is
+// never served from a branch overlay.
+// Scoped to ONE domain, on purpose, not searched across every domain the way a bare ref otherwise is: the
+// caller (docs-session.js) checks a watch hit's OWN domain here BEFORE any bare or cross-domain resolution
+// runs, which is what keeps a hit from ever being answered by a different domain's same-named file once its
+// own copy was made invisible by notOwned.
+function protectedRef(domain, ref) {
+  if (!domains().includes(domain)) return null;
+  const s = String(ref);
+  const slash = s.indexOf('/');
+  const first = slash < 0 ? null : s.slice(0, slash);
+  // A ref qualified for a DIFFERENT domain never names this domain's protected file - only a bare ref
+  // or one qualified for THIS domain does, the two spellings a watch entry's own domain uses for its
+  // own section.
+  if (first && domains().includes(first) && first !== domain) return null;
+  const bare = first && domains().includes(first) ? s.slice(slash + 1) : s;
+  const [fileKeyRaw, sec] = bare.split('#');
+  if (!sec) return null;
+  const fileKey = stripMd(fileKeyRaw);
+  const candidates = fileKey.includes('/') ? [fileKey] : [fileKey, `references/${fileKey}`, `history/${fileKey}`];
+  const rel = candidates.find((c) => matches(notOwnedOf(domain), `${c}.md`));
+  if (!rel) return null;
+  const file = path.join(domainDir(domain), `${rel}.md`);
+  if (!fs.existsSync(file)) return null;
+  const hit = parse(file, fs.readFileSync(file, 'utf8')).find((x) => x.id === `${key(file)}#${sec}`);
+  if (!hit) return null;
+  return {
+    id: `${domain}/${rel}#${sec}`,
+    heading: hit.heading,
+    file: path.relative(ROOT, file).split(path.sep).join('/'),
+    first: firstSentence(hit.text) || '(no text yet - this section is a heading only)',
+  };
+}
+
 function toc(fileKey) {
-  const file = findFile(fileKey);
-  if (!file) return `no such doc file: ${fileKey}. Known: ${docFiles().map(key).join(', ')}`;
+  let file;
+  try { file = findFile(fileKey); } catch (e) { return e.message; }
+  if (!file) return `no such doc file: ${fileKey}. Known: ${docFiles().map(knownKey).join(', ')}`;
   const secs = sections(file);
   if (!secs.length) return `${key(file)} has no headings (${fs.statSync(file).size} chars)`;
   return secs.map((s) => `${s.id}  ${'  '.repeat(s.level - 2)}${s.heading} (${s.chars} chars)${s.overrideOf ? (s.conflict ? ' [this branch, CONFLICT]' : ' [this branch]') : ''}`).join('\n');
@@ -786,8 +965,9 @@ function toc(fileKey) {
 
 function show(ref) {
   const [fileKey, sec] = String(ref).split('#');
-  const file = findFile(fileKey);
-  if (!file) return `no such doc file: ${fileKey}. Known: ${docFiles().map(key).join(', ')}`;
+  let file;
+  try { file = findFile(fileKey); } catch (e) { return e.message; }
+  if (!file) return `no such doc file: ${fileKey}. Known: ${docFiles().map(knownKey).join(', ')}`;
   if (!sec) return toc(fileKey);
   const secs = sections(file);
   const hit = secs.find((s) => s.id === `${key(file)}#${sec}`) || secs.find((s) => slug(s.heading).startsWith(sec));
@@ -910,11 +1090,50 @@ function promote(name) {
 function promoteLocked(name, dir) {
   const results = [];
   let freshConflict = false;
-  for (const over of overrideFiles(dir)) {
-    const rel = path.relative(dir, over).split(path.sep);
+  for (let over of overrideFiles(dir)) {
+    let rel = path.relative(dir, over).split(path.sep);
     const id = path.basename(rel.pop(), '.md');
-    const mainline = `${path.join(DOCS, ...rel)}.md`;
-    const label = `${path.basename(mainline, '.md')}#${id}`;
+    // rel's own leading segment is the domain overlayParts wrote (kept in rel for the .base/.conflict
+    // paths below, which mirror overlayParts' own shape); only the mainline file lives outside it.
+    const [domain, ...relParts] = rel;
+    let mainline = domain ? `${path.join(domainDir(domain), ...relParts)}.md` : null;
+    // The segment on disk is trusted only once it names a real domain, and - when the path it composes
+    // happens to already exist - only once that existing file is actually one of that domain's own.
+    // A composed path that does not exist at all is the ordinary 'mainline dropped this file' conflict
+    // below, already safe; an EXISTING one that is not this domain's is the dangerous case (fold into
+    // it and its own doc file is silently corrupted, then the overlay holding the only other copy is
+    // deleted): an overlay from before this feature, or one whose domain has since moved, can compose a
+    // path that happens to exist as an unrelated file. The one case fixed automatically: NO domain
+    // segment at all, because 'architecture' was the only domain the engine ever wrote before domains
+    // existed, so the whole rel IS the old relKey - provable, not a guess. Anything else is reported,
+    // never guessed.
+    let stranded = !mainline || !domains().includes(domain)
+      || (fs.existsSync(mainline) && !domainFiles(domain).includes(mainline));
+    if (stranded && domains().includes('architecture')) {
+      const legacy = `${path.join(domainDir('architecture'), ...rel)}.md`;
+      if (domainFiles('architecture').includes(legacy)) {
+        // The rescue moves the FILES onto the domain-qualified shape, not just the `mainline` pointer: a
+        // marker later written under the legacy rel would sit where writeInPlace never looks (it always
+        // builds a marker path from overlayParts, domain-qualified), so a migrated overlay's own
+        // conflict could never be resolved the documented way. Moving the override, its .base twin and
+        // any .conflict twin already on disk onto 'architecture/' first means every line below - base
+        // read, marker path, post-fold cleanup - runs over one spelling, the same as an overlay this
+        // version wrote itself.
+        const migrate = (root) => {
+          const from = path.join(root, ...rel, `${id}.md`);
+          const to = path.join(root, 'architecture', ...rel, `${id}.md`);
+          if (fs.existsSync(from)) { fs.mkdirSync(path.dirname(to), { recursive: true }); fs.renameSync(from, to); }
+          return to;
+        };
+        over = migrate(dir);
+        migrate(path.join(dir, '.base'));
+        migrate(path.join(dir, '.conflict'));
+        rel = ['architecture', ...rel];
+        mainline = legacy;
+        stranded = false;
+      }
+    }
+    const label = stranded ? [...rel, id].join('/') : `${path.basename(mainline, '.md')}#${id}`;
     const marker = path.join(dir, '.conflict', ...rel, `${id}.md`);
     // A standing conflict is flagged with a marker holding mainline's text at THIS moment - not to compare
     // against later (any set of the section on mainline resolves it, whatever it says), just for reference.
@@ -925,6 +1144,17 @@ function promoteLocked(name, dir) {
       fs.writeFileSync(marker, `${stripStamp(mainlineText || '')}\n`);
       results.push({ id: label, result: 'conflict', why, path: over });
     };
+    if (stranded) {
+      // A fourth, distinguishable cause: the domain and the file both still exist, but the domain has
+      // since declared the file notOwned - none of the other three causes' shared advice ('move the text
+      // under the right domain by hand, then promote again') can ever apply, because promoting again
+      // hits this same check forever. Reported on its own, with advice that can actually be followed.
+      const orphan = notOwnedOverride(dir, over);
+      flagConflict(orphan
+        ? `${orphan.target} is declared notOwned by ${orphan.domain}/watch.json - this override will never be folded automatically, however many times promote runs; recover its text by hand from ${path.relative(ROOT, over)} and hand it to whatever now owns ${orphan.target}, then 'docs.js prune ${name}' once you no longer need this branch's copy`
+        : 'its overlay path does not resolve to a file any domain in this install owns - an overlay from before domains existed with no matching architecture file, one whose domain moved, or one nested deeper than a domain keeps its own files; nothing was folded or removed - move the text under the right domain by hand, then promote again', '');
+      continue;
+    }
     // No marker here: a missing doc file is a conflict `set` can never match (there is no file to write the
     // section into), so a marker for it could only ever be cleared by prune - which drops the whole branch,
     // including any of its other, perfectly fine overrides. It stays a plain, always-reported conflict.
@@ -1114,11 +1344,25 @@ function lint() {
   } else notes.push('no ORIENTATION.md: sessions start with no map');
   const w = loadWatch();
   problems.push(...w.problems);
-  const ids = new Set(allSections().map((s) => s.id));
-  for (const e of [...w.watch, ...(w.newModule ? [{ kind: 'newModule', sections: w.newModule.sections }] : [])]) {
-    for (const id of e.sections) if (!ids.has(id)) problems.push(`watch.json '${e.kind}' names a section that does not exist: ${id}`);
+  // findSection resolves a sections entry the same way every reader does - bare or domain-qualified -
+  // rather than a bare-id Set membership check that would false-flag a qualified entry as missing.
+  // findSection alone can never see a section of a file the entry's OWN domain declares notOwned - that
+  // file is excluded from domainFiles, which is what makes the write refusal hold - so a watch entry
+  // naming one, the intended shape for a decisions domain, needs protectedRef(e.domain, id) tried too
+  // before it is reported missing.
+  for (const e of [...w.watch, ...w.newModule.map((nm) => ({ kind: 'newModule', sections: nm.sections, domain: nm.domain }))]) {
+    for (const id of e.sections) if (!findSection(id) && !protectedRef(e.domain, id)) problems.push(`${e.domain}/watch.json '${e.kind}' names a section that does not exist: ${id}`);
   }
-  if (overlayDir()) {
+  const dir = overlayDir();
+  if (dir) {
+    // Declaring a file notOwned while this branch already overrides a section of it orphans that override
+    // silently otherwise: the file drops out of domainFiles, so show/status/lint all go quiet about it and
+    // nothing on this branch says the text left the corpus. A note, not a problem - nothing is broken or
+    // lost, promote's own refusal (with working advice) is what actually stops the fold.
+    for (const over of overrideFiles(dir)) {
+      const orphan = notOwnedOverride(dir, over);
+      if (orphan) notes.push(`this branch overrides a section of ${orphan.target}, which ${orphan.domain}/watch.json now declares notOwned - it will never fold; recover it by hand from ${path.relative(ROOT, over)}`);
+    }
     const st = status();
     for (const id of st.conflicts) problems.push(`this branch's version of ${id} conflicts with mainline's newer text - docs.js show ${id} --conflict`);
     for (const id of st.orphans) problems.push(`this branch overrides ${id}, which mainline removed`);
@@ -1154,33 +1398,114 @@ function seedIds() {
 }
 
 const WATCH_ROOTS = ['src', 'tests'];
-function loadWatch() {
-  const empty = { sourceRoots: WATCH_ROOTS, watch: [], newModule: null };
-  if (!fs.existsSync(WATCH_FILE)) return { ...empty, problems: [], missing: true };
+// One domain's own watch.json - sourceRoots, watch[] of {kind, globs, sections}, newModule and notOwned,
+// exactly the shape every shipped watch.json already uses. A sections entry may be bare or
+// domain-qualified; both are resolved by the reader (findSection) rather than here, so nothing about this
+// shape changes for an existing file.
+// Frozen once at cache-write time (see deepFreeze) so a caller that sorts, pushes or splices into a cached
+// watch entry cannot corrupt every later read of this domain for the rest of the process.
+const deepFreeze = (v) => {
+  if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    Object.values(v).forEach(deepFreeze);
+  }
+  return v;
+};
+function watchOf(domain) {
+  if (!WATCH_CACHE) WATCH_CACHE = new Map();
+  if (WATCH_CACHE.has(domain)) return WATCH_CACHE.get(domain);
+  const result = deepFreeze(watchOfUncached(domain));
+  WATCH_CACHE.set(domain, result);
+  return result;
+}
+function watchOfUncached(domain) {
+  const empty = { sourceRoots: WATCH_ROOTS, watch: [], newModule: null, notOwned: [] };
+  const file = path.join(domainDir(domain), 'watch.json');
+  if (!fs.existsSync(file)) return { ...empty, problems: [], missing: true };
   let j;
-  try { j = JSON.parse(fs.readFileSync(WATCH_FILE, 'utf8')); } catch (e) { return { ...empty, problems: [`watch.json is not valid JSON: ${e.message}`] }; }
-  if (!j || typeof j !== 'object' || Array.isArray(j)) return { ...empty, problems: ['watch.json must be an object with sourceRoots, watch and newModule'] };
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { ...empty, problems: [`${domain}/watch.json is not valid JSON: ${e.message}`] }; }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return { ...empty, problems: [`${domain}/watch.json must be an object with sourceRoots, watch, newModule and notOwned`] };
   const problems = [];
   const strings = (v, what, required) => {
-    if (v === undefined) { if (required) problems.push(`watch.json ${what} is missing`); return null; }
-    if (!Array.isArray(v) || !v.length || v.some((x) => typeof x !== 'string' || !x)) { problems.push(`watch.json ${what} must be a non-empty list of strings`); return null; }
+    if (v === undefined) { if (required) problems.push(`${domain}/watch.json ${what} is missing`); return null; }
+    if (!Array.isArray(v) || !v.length || v.some((x) => typeof x !== 'string' || !x)) { problems.push(`${domain}/watch.json ${what} must be a non-empty list of strings`); return null; }
     return v;
   };
   const sourceRoots = (strings(j.sourceRoots, 'sourceRoots') || WATCH_ROOTS).map((r) => r.replace(/\/+$/, ''));
   const watch = [];
-  if (j.watch !== undefined && !Array.isArray(j.watch)) problems.push('watch.json watch must be a list');
+  if (j.watch !== undefined && !Array.isArray(j.watch)) problems.push(`${domain}/watch.json watch must be a list`);
   for (const [i, e] of (Array.isArray(j.watch) ? j.watch : []).entries()) {
     const globs = strings(e && e.globs, `watch[${i}].globs`, true);
     const secs = strings(e && e.sections, `watch[${i}].sections`, true);
-    if (globs && secs) watch.push({ kind: typeof e.kind === 'string' && e.kind ? e.kind : `watch[${i}]`, globs, sections: secs });
+    if (globs && secs) watch.push({ kind: typeof e.kind === 'string' && e.kind ? e.kind : `watch[${i}]`, globs, sections: secs, domain });
   }
   let newModule = null;
   if (j.newModule !== undefined) {
     const globs = strings(j.newModule && j.newModule.globs, 'newModule.globs', true);
     const secs = strings(j.newModule && j.newModule.sections, 'newModule.sections', true);
-    if (globs && secs) newModule = { globs: globs.map((g) => (g.endsWith('/') ? g : `${g}/`)), sections: secs };
+    if (globs && secs) newModule = { globs: globs.map((g) => (g.endsWith('/') ? g : `${g}/`)), sections: secs, domain };
   }
-  return { sourceRoots, watch, newModule, problems };
+  let notOwned = [];
+  if (j.notOwned !== undefined) {
+    if (!Array.isArray(j.notOwned) || j.notOwned.some((x) => typeof x !== 'string' || !x)) problems.push(`${domain}/watch.json notOwned must be a list of strings`);
+    else notOwned = j.notOwned;
+  }
+  return { sourceRoots, watch, newModule, notOwned, problems };
+}
+// The declared notOwned list, exactly as that domain's own watch.json states it - no default folded
+// in, so a caller that wants the whole effective list (domainFiles, set) goes through notOwnedOf below.
+const unowned = (domain) => watchOf(domain).notOwned;
+// ORIENTATION.md is architecture's own generated, byte-capped file (see BLOCK_FILE/BLOCK_BYTES in
+// lint) - unowned by the write path whatever that domain's watch.json says, so no existing watch.json
+// needs a notOwned entry added for it. Folded into the SAME glob-matching mechanism a domain's own
+// declared list extends, rather than a second hardcoded filename check beside it.
+const notOwnedOf = (domain) => (domain === 'architecture' ? [...new Set(['ORIENTATION.md', ...unowned(domain)])] : unowned(domain));
+// A bare ref (no <domain>/ prefix) to a notOwned file resolves no domain at all: parseRef's own domain
+// search runs over domainFiles, which has already excluded the file, so 'no such doc file' is what a bare
+// spelling gets today even though the domain-qualified spelling of the SAME file gets the true refusal.
+// Checked across every domain's notOwnedOf, in the layouts domainFiles itself reads a file under (root,
+// references/, history/) when fileKey names no subfolder of its own.
+function notOwnedMatch(fileKey) {
+  const stripped = stripMd(fileKey);
+  const candidates = stripped.includes('/') ? [stripped] : [stripped, `references/${stripped}`, `history/${stripped}`];
+  for (const d of domains()) {
+    for (const c of candidates) {
+      const target = `${c}.md`;
+      if (matches(notOwnedOf(d), target)) return { domain: d, file: target };
+    }
+  }
+  return null;
+}
+// An override file whose section belongs to a file its own domain has since declared notOwned. The
+// domain and the file both still exist - this is not 'stranded' for any of promoteLocked's other
+// reasons (no matching file, a moved domain, nesting too deep) - so promote can never fold it and
+// 'move the text under the right domain by hand, then promote again' cannot work either: the domain has
+// said it will never own this file again, however many times promote runs.
+function notOwnedOverride(dir, over) {
+  const rel = path.relative(dir, over).split(path.sep);
+  rel.pop();
+  const [domain, ...relParts] = rel;
+  if (!domain || !domains().includes(domain) || !relParts.length) return null;
+  const target = `${relParts.join('/')}.md`;
+  const mainline = `${path.join(domainDir(domain), ...relParts)}.md`;
+  return fs.existsSync(mainline) && matches(notOwnedOf(domain), target) ? { domain, target } : null;
+}
+
+// Every domain's own watch.json, read on its own and merged: a malformed or missing one never blinds
+// another domain's watch. sourceRoots union (the 'first change under a source root' gate reads every
+// domain's own roots at once); watch and newModule concatenate, each entry still carrying which domain
+// it came from so a hit can be attributed and the section resolved without guessing.
+function loadWatch() {
+  const per = domains().map((d) => ({ d, w: watchOf(d) }));
+  const present = per.filter((p) => !p.w.missing);
+  const sourceRoots = [...new Set(present.flatMap((p) => p.w.sourceRoots))];
+  return {
+    sourceRoots: sourceRoots.length ? sourceRoots : WATCH_ROOTS,
+    watch: present.flatMap((p) => p.w.watch),
+    newModule: present.flatMap((p) => (p.w.newModule ? [p.w.newModule] : [])),
+    problems: per.flatMap((p) => p.w.problems),
+    missing: present.length === 0,
+  };
 }
 
 function watchHits(files, dirs = []) {
@@ -1188,11 +1513,11 @@ function watchHits(files, dirs = []) {
   const hits = [];
   for (const e of w.watch) {
     const hit = files.filter((f) => matches(e.globs, f));
-    if (hit.length) hits.push({ kind: e.kind, files: hit, sections: e.sections });
+    if (hit.length) hits.push({ kind: e.kind, files: hit, sections: e.sections, domain: e.domain });
   }
-  if (w.newModule) {
-    const hit = dirs.map((d) => `${d.replace(/\/+$/, '')}/`).filter((d) => matches(w.newModule.globs, d));
-    if (hit.length) hits.push({ kind: 'new module', files: hit, sections: w.newModule.sections });
+  for (const nm of w.newModule) {
+    const hit = dirs.map((d) => `${d.replace(/\/+$/, '')}/`).filter((d) => matches(nm.globs, d));
+    if (hit.length) hits.push({ kind: 'new module', files: hit, sections: nm.sections, domain: nm.domain });
   }
   return hits;
 }
@@ -1234,13 +1559,14 @@ function changedSince(snap) {
 }
 
 module.exports = {
-  ROOT, DOCS_ROOT, DOCS, BLOCK_FILE, WATCH_FILE, BRANCHES,
-  git, tracked, VERSIONING_KEYS, docsMode, gitVersioned, versioningMismatch, hasGit, branch, isMainline, safe, overlayDir, docFiles, relKey, key, findFile, isHistory,
+  ROOT, DOCS_ROOT, DOCS, BLOCK_FILE, BRANCHES, domains, domainDir, resetDomains,
+  git, tracked, VERSIONING_KEYS, docsMode, gitVersioned, versioningMismatch, hasGit, branch, isMainline, safe, overlayDir, docFiles, relKey, key, findFile, parseRef, isHistory,
   parse, sections, allSections, where, show, toc, matches, outgrownFiles, stale,
   set, writeBaseMeta, refreshBaseMeta, readMeta, mainlineRefs, porcelainPaths, blobOf, blobsOf, overlayOwner,
   stripStamp, stampLineOf, withStamp, conflictView,
   overlayNames, mergedBranches, promote, autoPromote, deletedUnmerged, prune, status,
-  lint, seedIds, loadWatch, watchHits, snapshot, changedSince,
+  lint, seedIds, loadWatch, watchHits, watchOf, unowned, snapshot, changedSince,
+  firstSentence, findSection, protectedRef,
 };
 if (require.main !== module) return;
 

@@ -56,11 +56,17 @@ const log = (root, input, row) => {
 function orientation(root, docs) {
   let block = '';
   try { block = fs.readFileSync(docs.BLOCK_FILE, 'utf8').trim(); } catch {}
+  // ORIENTATION.md stays architecture's own file, read exactly as before - a domain gets no per-domain
+  // twin. The docs-root line below used to name architecture/ as if it were the only docs folder; a
+  // project whose docs are code-style/ and decisions/ (no architecture/ at all) is named correctly here.
+  let doms = [];
+  try { doms = docs.domains(); } catch {}
+  const rootRel = path.relative(root, docs.DOCS_ROOT).split(path.sep).join('/');
   return [
     'How this project is documented - read this before deciding how to implement anything.',
     ...(block ? ['', block] : []),
     '',
-    `The docs live under \`${path.relative(root, docs.DOCS).split(path.sep).join('/')}/\`. Read them by section, not whole files:`,
+    `The docs live under \`${rootRel}/\` (${doms.join(', ')}). Read them by section, not whole files:`,
     `\`${READ} where <path>\` names the sections covering a file; \`${READ} show <file>#<id>\` prints one.`,
     'For a specific symbol the CODE wins; the docs give the decisions, the conventions and the reasons.',
   ];
@@ -133,7 +139,12 @@ function main() {
   // model from its own shell, which never goes through this process's env at all.
   process.env.CLAUDE_PROJECT_DIR = root;
   const docs = require('./docs.js');
-  if (!fs.existsSync(docs.DOCS)) { if (event === 'preToolUse') allow(); return; }
+  // A domain is any top-level folder under the docs root holding a watch.json (architecture counts even
+  // without one - see docs.js's own domains()). A project whose docs are code-style/ and decisions/,
+  // with no architecture/ at all, must still get the SessionStart block, the gate and the finish ask - so
+  // the whole-hook gate reads every domain, not one hardcoded folder. An empty list is still the right
+  // reason to return: nothing under the docs root declares itself a domain.
+  if (!docs.domains().length) { if (event === 'preToolUse') allow(); return; }
   const state = loadState(sessionKey(input));
   if (event === 'sessionStart') return sessionStart(input, root, docs, state);
   if (event === 'preToolUse') return preToolUse(input, root, docs, state);
@@ -189,7 +200,11 @@ function writeTargets(command) {
 const relative = (root, paths) => [...new Set(paths.map((p) => path.relative(root, path.resolve(root, p.replace(/^['"]|['"]$/g, '')))).filter((p) => p && !p.startsWith('..')))];
 
 // Only reading a section's text is a consult: `where`, `toc` and listings point at sections without reading them.
-function consultedBy(input, paths, docsRel) {
+// `docRoots` is a LIST now, one entry per domain (each domain's own root, project-relative) - a project can be
+// documented in code-style/ or decisions/ alone, and a read under any one of them is a real consult, not just
+// one under architecture/. Deliberately NOT the whole docs root: DOCS_ROOT also holds hook-blocks/,
+// docs-log.jsonl and .branches/, none of which is a section covering a file.
+function consultedBy(input, paths, docRoots) {
   const name = input.tool_name || '';
   const t = input.tool_input || {};
   const command = typeof t.command === 'string' ? t.command : '';
@@ -199,7 +214,7 @@ function consultedBy(input, paths, docsRel) {
       .filter((r) => !r.startsWith('-') && /^[A-Za-z][\w.\/-]*(#[\w-]+)?$/.test(r));
   }
   if (/docs\.js[ \t]+(toc|where|files|status|lint|watch|stale)\b/.test(command)) return [];
-  const isDoc = (p) => p === docsRel || p.startsWith(`${docsRel}/`);
+  const isDoc = (p) => docRoots.some((d) => p === d || p.startsWith(`${d}/`));
   const hits = paths.filter(isDoc);
   if (hits.length && (/^(Read|Grep)$/.test(name) || (name === 'Shell' && !writeTargets(command).length))) return hits;
   return [];
@@ -219,8 +234,11 @@ function preToolUse(input, root, docs, state) {
   // guard-secret-value.js's preToolUse wiring works) - filter to the relevant tools here instead.
   if (!/^(Read|Write|Grep|Shell)$/.test(name)) return allow();
   const paths = toolPaths(input, root);
-  const docsRel = path.relative(root, docs.DOCS).split(path.sep).join('/');
-  const consults = consultedBy(input, paths, docsRel);
+  // One root per domain, not one hardcoded architecture/ - a project documented only in code-style/ must
+  // still get credit for reading it. domains() is already required to succeed for this hook to have run
+  // at all (see main()'s own gate above), so no extra guard is needed here.
+  const docRoots = docs.domains().map((d) => path.relative(root, docs.domainDir(d)).split(path.sep).join('/'));
+  const consults = consultedBy(input, paths, docRoots);
   if (consults.length) {
     state.consults.push(...consults);
     saveState(sessionKey(input), state);
@@ -252,7 +270,7 @@ function preToolUse(input, root, docs, state) {
   try { hits = docs.where(targets, 3); } catch {}
   let reason;
   if (!hits.length) {
-    reason = `Architecture docs not read yet in this session. Before changing ${targets[0]}, see what is documented: ${READ} files`;
+    reason = `Docs not read yet in this session. Before changing ${targets[0]}, see what is documented: ${READ} files`;
   } else {
     const [first, ...rest] = hits;
     const body = first.text.length > INLINE_CHARS ? `${first.text.slice(0, INLINE_CHARS)}\n... (${first.text.length - INLINE_CHARS} more chars: \`${READ} show ${first.id}\`)` : first.text;
@@ -260,7 +278,7 @@ function preToolUse(input, root, docs, state) {
     saveState(sessionKey(input), state);
     log(root, input, { event: 'consult', refs: [first.id], tool: 'gate-inline' });
     reason = [
-      `Architecture docs not read yet in this session. ${first.id} covers ${targets[0]} - here it is:`,
+      `Docs not read yet in this session. ${first.id} covers ${targets[0]} - here it is:`,
       '', body, '',
       ...(rest.length ? [`Also covering it: ${rest.map((h) => `${h.id} (${h.chars} chars, \`${READ} show ${h.id}\`)`).join(', ')}`, ''] : []),
       'That is the convention this change follows. Now make the change.',
@@ -269,6 +287,31 @@ function preToolUse(input, root, docs, state) {
   log(root, input, { event: 'hold', target: targets[0], offered: hits.map((h) => h.id) });
   blockRow(root, input, reason);
   process.stdout.write(JSON.stringify({ permission: 'deny', agent_message: reason }));
+}
+
+// A watch.json entry's sections are stored verbatim, and watchHits tags every hit with the domain it came
+// from. docs.protectedRef is tried first, scoped to the hit's OWN domain: a domain's own notOwned file
+// drops out of domainFiles entirely, so a bare id naming it would otherwise resolve to nothing (or, if
+// another domain holds a same-named file, silently to the WRONG domain's copy) instead of being recognised
+// as a decision a person owns. Two lists, capped separately: an ask offers a rewrite, a warning offers
+// none, and they must never compete for the same slot.
+function splitHits(docs, hits, limit) {
+  const seenAsk = new Set();
+  const seenWarn = new Set();
+  const asks = [];
+  const warnings = [];
+  for (const h of hits) {
+    for (const id of h.sections) {
+      let warn = null;
+      try { warn = docs.protectedRef(h.domain, id); } catch {}
+      if (warn) {
+        if (warnings.length < limit && !seenWarn.has(warn.id)) { seenWarn.add(warn.id); warnings.push(warn); }
+        continue;
+      }
+      if (asks.length < limit && !seenAsk.has(id)) { seenAsk.add(id); asks.push(id); }
+    }
+  }
+  return { asks, warnings };
 }
 
 function stop(input, root, docs, state) {
@@ -281,20 +324,38 @@ function stop(input, root, docs, state) {
     hits = docs.watchHits(changed.files, changed.dirs);
   } catch { return; }
   if (!hits.length) return;
-  const ids = [...new Set(hits.flatMap((h) => h.sections))].slice(0, ASK_SECTIONS);
+  const { asks: ids, warnings } = splitHits(docs, hits, ASK_SECTIONS);
+  if (!ids.length && !warnings.length) return;
   const files = [...new Set(hits.flatMap((h) => h.files))];
   const kinds = [...new Set(hits.map((h) => h.kind))];
   state.asked = true;
   saveState(sessionKey(input), state);
-  log(root, input, { event: 'ask-update', sections: ids, files: files.slice(0, 5), kinds });
+  log(root, input, { event: 'ask-update', sections: ids, warnings: warnings.map((w) => w.id), files: files.slice(0, 5), kinds });
   let scope = 'It is written into the doc file itself.';
   try {
     const st = docs.status();
     if (st.mode.startsWith('overlay') && !st.mainline) scope = `It is saved for branch ${st.branch} only; mainline keeps its own text until the branch merges.`;
   } catch {}
-  const one = ids.length === 1;
-  process.stdout.write(JSON.stringify({
-    followup_message: [
+  const subject = files.length === 1 ? 'this file' : 'these files';
+  const parts = [];
+  // The warning block leads, the ask block follows: an ask can be discharged with one reply ('docs still
+  // hold') and reads as done; a warning can never be discharged at all, only reported. Printing it after
+  // the ask would let a reader who answers the ask stop reading before ever reaching it.
+  if (warnings.length) {
+    const oneW = warnings.length === 1;
+    if (oneW) parts.push(`A DECISION recorded by a person covers ${subject} - '${warnings[0].heading}', in ${warnings[0].file}:`, `  "${warnings[0].first}"`);
+    else {
+      parts.push(`${warnings.length} DECISIONS recorded by a person cover ${subject}:`);
+      for (const w of warnings) parts.push('', `  '${w.heading}', in ${w.file}:`, `    "${w.first}"`);
+    }
+    parts.push('', oneW
+      ? 'If your change makes that untrue, say so in your answer - this engine cannot rewrite it, only a person can.'
+      : 'If your change makes any of those untrue, say so in your answer - this engine cannot rewrite them, only a person can.');
+  }
+  if (ids.length) {
+    const one = ids.length === 1;
+    if (warnings.length) parts.push('');
+    parts.push(
       `One check before you finish. You changed ${files.slice(0, 4).join(', ')}${files.length > 4 ? ` and ${files.length - 4} more` : ''} (${kinds.join(', ')}), which ${one ? 'this section owns' : 'these sections own'}: ${ids.join(', ')}.`,
       `Open ${one ? 'it' : 'them'}: ${READ} show ${ids.join(' ')}`,
       'For each: if your change moved a rule, boundary, contract or pattern it states, rewrite that section - heading included, changing only what your change made untrue - and save it:',
@@ -303,7 +364,10 @@ function stop(input, root, docs, state) {
       '  MD',
       `${scope} Leave out the captured line; set stamps it.`,
       `If ${one ? 'it still holds' : 'they still hold'}, reply 'docs still hold: ${ids.join(', ')}' and finish. Do not edit any other doc.`,
-    ].join('\n'),
+    );
+  }
+  process.stdout.write(JSON.stringify({
+    followup_message: parts.join('\n'),
   }));
 }
 

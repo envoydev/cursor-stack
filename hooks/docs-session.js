@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// docs-session.js - makes the architecture docs the starting point of a session and keeps them honest at its end.
+// docs-session.js - makes the project's docs (every domain under the docs root) the starting point of a session
+// and keeps them honest at its end.
 // Adapted from claude-stack's stack/hooks/docs-session.js for Cursor's hook contract (cursor.com/docs/hooks) -
 // event names, payload fields and output shapes are Cursor's; docs.js (the engine it requires) is unchanged.
 //   sessionStart -> folds merged branches' doc versions into mainline, then pushes ORIENTATION.md, this branch's

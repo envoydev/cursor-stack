@@ -345,7 +345,7 @@ MCPS=(
 #   - guard-unapproved-dispatch  -> subagentStart (an implementer fan-out needs the recorded approval).
 #   - guard-secret-value         -> preToolUse + beforeShellExecution + beforeReadFile (a credential is read for
 #                                   presence, never its value: a dump is redacted or denied, judged by content).
-#   - docs-session               -> sessionStart + preToolUse + stop (the architecture docs' start block, the
+#   - docs-session               -> sessionStart + preToolUse + stop (every docs domain's start block, the
 #                                   first source change held until a covering section was read, and the
 #                                   watch-list nudge at session end via stop's followup_message - Cursor's stop
 #                                   cannot block, so this is a nudge, not a gate). Wired UNSCOPED on preToolUse,

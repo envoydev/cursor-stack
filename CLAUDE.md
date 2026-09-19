@@ -46,7 +46,8 @@ Invariants).
   text, and there is no question tool to gate) and usage instrumentation (its analyzer reads a
   transcript format Cursor does not produce). `docs-session.js` (`sessionStart` + `preToolUse`, wired
   unscoped like `guard-secret-value.js` since this installer's `hooks.json` generator carries no
-  per-entry matcher + `stop`) makes the architecture docs the start of a session and keeps them honest
+  per-entry matcher + `stop`) makes every docs DOMAIN (a top-level folder under the docs root holding a
+  `watch.json`, plus the grandfathered `architecture/`) the start of a session and keeps them honest
   at its end. HOW those docs are versioned is a `CURSOR_DOCS_VERSIONING` choice in the OS/user
   environment, never a guess from git (absent, it falls back to detecting whether the docs are
   committed, same as before this key existed): `git` means git versions the docs per branch, `local`

@@ -3,6 +3,18 @@
 The measured anecdotes behind this skill's rules, kept out of the run-time body so every session stops paying
 for them. Audit material: read it to learn WHY a rule is shaped the way it is, never to run the skill.
 
+## The script (scripts/capabilities-inventory.js)
+- **What is a COMMAND holds, what is PROSE slips** - measured across 154 session bundles: this
+  skill's PRECHECK, the one step that was a command, ran in 26 of 26 runs; the prose step right
+  after it slipped in 8 of 26. That split is why the mechanical half is a script now.
+- **One node pass, never a fork per skill** - measured: the shell extractor loop took 4m13s on Git Bash.
+- **The frontmatter check is node, never PyYAML** - measured: a run's verify step died on
+  ModuleNotFoundError and the close still reported 'frontmatter parses'.
+- **Rules are read as `.mdc` with `globs:` / `alwaysApply:`** - the peer stack's `paths:` key does
+  not exist here, and a scanner that looked for it reported every rule pathless.
+- **No `first call:` line in a Cursor rule** - Cursor exposes MCP tools directly, with no deferred
+  loading step, so the row names the server and its routing and stops there.
+
 ## 0. PRECHECK
 - **Empty output - say so in ONE line and STOP** - measured: the skill re-ran the full inventory whether or not anything had changed and reported 'unchanged from the previous capture' only AFTER paying for it - 44 runs across a nine-project collection, with 12 project-days carrying more than one run and one pair 18 minutes apart.
 

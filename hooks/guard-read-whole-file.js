@@ -127,8 +127,20 @@ function deny(userMessage, agentMessage)
     respond({ permission: 'deny', user_message: userMessage, agent_message: agentMessage });
 }
 
+// The three trees the installers seed into serena's OWN `ignored_paths` (.serena/project.yml):
+// serena cannot index them, so naming its tools for a path under one of them hands the model a
+// remedy that errors. Measured twice - the denial named serena for a `.cursor/...` path and the
+// redirect the model made from it failed. The ranged read is the remedy there.
+const SERENA_IGNORED = /(?:^|[\\/])\.(?:cursor|serena|playwright)(?:[\\/]|$)/;
+
 function serenaHint(file)
 {
+    if (SERENA_IGNORED.test(String(file)))
+    {
+        return 'serena cannot locate anything here: the installers seed `.cursor` / `.serena` / `.playwright` '
+            + 'into its own ignored_paths, so this tree is not indexed. Locate inside the file instead: '
+            + `grep -n '<pattern>' '${file}', then read only the lines it names.`;
+    }
     return `Locate first with serena: get_symbols_overview('${file}') then find_symbol(...), `
         + 'then read only the returned range (find_symbol with include_body=true only for a SMALL '
         + 'symbol; for a large body fetch it without the body first, then read the range you need).';
@@ -261,7 +273,11 @@ function handleShell()
     // '<literal filename>'` is exempt: no glob metacharacter means it names ONE file - the 'I know the
     // name, not the path' idiom - EXCEPT for markdown, where `-name SKILL.md` names one file per skill
     // directory (35 of them in the measured dump, 46 in the next): that is the sweep, not the idiom.
-    const sweepM = command.match(/\bfor\s+\w+\s+in\b[^\n]*?\bdo\b[^\n]*?\bcat\b[^\n]*/i)
+    // The loop's own text ENDS at `done`: `[^\n]*?` ran straight past it, so an unrelated `cat` in a
+    // later statement was read as the loop's body. Measured twice at ~88k tokens a block - the
+    // capabilities skill's own grep-only loop followed by `; cat .mcp.json` was denied as a sweep.
+    const NOT_DONE = '(?:(?!\\bdone\\b)[^\\n])';
+    const sweepM = command.match(new RegExp(`\\bfor\\s+\\w+\\s+in\\b${NOT_DONE}*?\\bdo\\b${NOT_DONE}*?\\bcat\\b${NOT_DONE}*`, 'i'))
         || command.match(/\bfind\b[^\n]*?-exec\s+cat\b[^\n]*/i)
         || command.match(/[^\n]*?\|\s*xargs\s+(?:-\w+\s+)*cat\b[^\n]*/i);
     if (sweepM)
@@ -417,12 +433,32 @@ function handleRead()
         // Line counting reads the file, so it runs only past the size bar.
         if (size > BIG_BYTES && delivered > 0 && delivered >= fileLineCount(file))
         {
+            // A grep remedy needs LINES. This branch judges size, not language, so it also catches the
+            // 93KB PNG and the one-line minified bundle, where `grep -n` and a ranged read both answer
+            // nothing (measured: 2 wasted calls on an image). Sniff the first bytes and prescribe PAGING.
+            let head = null;
+            try
+            {
+                const fd = fs.openSync(file, 'r');
+                const buf = Buffer.alloc(4096);
+                const n = fs.readSync(fd, buf, 0, 4096, 0);
+                fs.closeSync(fd);
+                head = buf.subarray(0, n);
+            }
+            catch
+            {
+                // unreadable - fall back to the line-based remedy
+            }
+            const unlined = !!head && (head.includes(0) || head.toString('latin1').split('\n').some((l) => l.length > 1000));
             deny(
                 `Blocked a whole-file read of ${path.basename(file)} (${Math.round(size / 1024)}KB).`,
                 `Blocked: whole-file read of ${file} (${Math.round(size / 1024)}KB). A file this large does not fit a tool result - `
-                + `reading it whole spends its entire size on context, and every message after it re-sends that. Take what you came `
-                + `for instead: grep -n '<pattern>' '${file}', then read only the lines it names. A persisted or spilled output is the `
-                + `common case here: grep or tail it, never read it whole.`,
+                + 'reading it whole spends its entire size on context, and every message after it re-sends that. '
+                + (unlined
+                    ? 'This file is binary or minified - it has no lines to grep or to read by range. Page it: '
+                      + `head -c 2000 '${file}', or sed -n '1,40p' '${file}' if it has lines at all, or file '${file}' when the bytes say nothing.`
+                    : `Take what you came for instead: grep -n '<pattern>' '${file}', then read only the lines it names. `
+                      + 'A persisted or spilled output is the common case here: grep or tail it, never read it whole.'),
             );
         }
         allow();

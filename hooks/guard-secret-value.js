@@ -75,10 +75,17 @@ const NAME_VALUE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 // A private key in PEM form is ONE value spanning lines, so the whitespace tell below would read it as a
 // label. Measured: a Firebase `PrivateKey` printed raw in the redacted view of an appsettings file.
 const PEM_PRIVATE = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/;
+// A machine credential is ASCII. A value carrying a letter outside it is a human-language LABEL -
+// the i18n tell the whitespace rule below misses, because a one-word translation of 'Password' has
+// no space in it (measured: a translation bundle came back as a 52.5KB 'redacted view ... 4
+// credential value(s)', and at replay `grep` and `cat` on an i18n file were still rewritten). A
+// SHAPE match still wins, so nothing with a known credential shape is excused here.
+const NON_ASCII = /[^\x00-\x7F]/;
 const isSampleValue = (key, v) => {
   const s = String(v).trim();
   if (PEM_PRIVATE.test(s)) return false;
   return s.toLowerCase() === String(key).toLowerCase() || /\s/.test(s) || TEMPLATE_VALUE.test(s) || s.startsWith('MII')
+    || (NON_ASCII.test(s) && !SECRET_SHAPE.test(s))
     || (s.length <= 64 && NAME_VALUE.test(s) && !SECRET_SHAPE.test(s));
 };
 const holdsCredential = (key, v) => isLive(v) && !isSampleValue(key, v);
@@ -100,12 +107,18 @@ const TEMPLATE_FILE = /\.(?:example|sample|template|dist)$/i;
 
 // The dotted path of the first credential-shaped key holding a live string, or null. Depth-capped:
 // a settings file is shallow, and the cap keeps a pathological JSON from costing the call.
-function secretKeyIn(node, prefix, depth) {
+// `labels`: the file is a translation bundle, where `password` / `token` / `secret` are UI STRINGS
+// under their own English names. The key test cannot hold there - every label it matches is a
+// label - so only a value that IS a credential counts: a known shape, a PEM key, a connection
+// string's embedded password.
+function secretKeyIn(node, prefix, depth, labels) {
   if (!node || typeof node !== 'object' || depth > 6) return null;
   for (const [k, v] of Object.entries(node)) {
     const here = prefix ? `${prefix}.${k}` : k;
-    if (typeof v === 'string') { if ((SECRET_KEY_RE.test(k) && holdsCredential(k, v)) || PEM_PRIVATE.test(v) || embeddedCredential(v)) return here; }
-    else { const hit = secretKeyIn(v, here, depth + 1); if (hit) return hit; }
+    if (typeof v === 'string') {
+      if ((!labels && SECRET_KEY_RE.test(k) && holdsCredential(k, v)) || (labels && SECRET_SHAPE.test(v))
+        || PEM_PRIVATE.test(v) || embeddedCredential(v)) return here;
+    } else { const hit = secretKeyIn(v, here, depth + 1, labels); if (hit) return hit; }
   }
   return null;
 }
@@ -125,6 +138,10 @@ function secretLineIn(text) {
 // Judge one file by CONTENT: the key that makes it a credential file, or null. JSON first (a
 // settings.json, mcp.json, appsettings.json), dotenv second; anything else - source code, docs -
 // is never a credential file here (source dumps are guard-read-whole-file's concern).
+// A translation bundle's own tree: `src/assets/i18n/en.json`, `locales/uk/common.json`. The path
+// is the only tell a one-word label has, and a stack that keeps credentials in a locales directory
+// is a shape nobody ships - the accepted gap is stated rather than guessed at.
+const TRANSLATION_PATH = /(?:^|[\\/])(?:i18n|locales?|translations?|lang|langs)[\\/]/i;
 function secretIn(file) {
   let text;
   if (TEMPLATE_FILE.test(pathMod.basename(String(file)))) return null;
@@ -132,7 +149,7 @@ function secretIn(file) {
     if (fs.statSync(file).size > MAX_BYTES) return null;
     text = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
   } catch { return null; }
-  try { return secretKeyIn(JSON.parse(text), '', 0); } catch { /* not JSON */ }
+  try { return secretKeyIn(JSON.parse(text), '', 0, TRANSLATION_PATH.test(String(file))); } catch { /* not JSON */ }
   const first = text.split(LINES).find((l) => l.trim() && !l.trim().startsWith('#')) || '';
   return DOTENV_LINE.test(first) ? secretLineIn(text) : null;
 }

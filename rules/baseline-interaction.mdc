@@ -41,6 +41,7 @@ syntax, factual questions, and casual conversation are exempt: just answer.
 ## Formatting and privacy
 
 - No em-dashes - use single dashes. No double quotes - use single quotes. This covers a QUESTION put to the user as well as an answer - its wording, its option labels and their descriptions - the surface that failed 10 measurements out of 10.
+- The quote rule is PROSE only, never JSON or code: a string's delimiters stay double, only the text inside them avoids a literal `"`. `{"label": "Today's sessions"}` is right; re-delimiting the value with single quotes is invalid JSON and cost a measured retry.
 - Never use or mention the user's name in responses or any skill output unless the user explicitly says so.
 - No `ponytail:` marker comments in code or output, and no mentions of them - a deliberate simplification's ceiling and upgrade path goes in the report or summary, never into a code comment.
 

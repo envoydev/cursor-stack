@@ -23,6 +23,10 @@ gets its name + 'routing: see project docs'. A row says WHEN to reach for the se
 its tools carry the load - naming a server is not using it, so the tool names are the row's
 load-bearing half.
 
+`scripts/capabilities-inventory.js` prints these rows already filled, one per registered server -
+its `MCP ROUTING rows` block is the paste source. The map below is what the script reads;
+`<server>` in a row is substituted with the registered name.
+
 The routing map (only for servers actually present):
 - `serena` - default symbol navigator + symbol-level editor; `find_symbol` / `find_referencing_symbols` before any whole-file Read; also holds the per-project handoff memory (`.serena/memories/`, via `write_memory` / `read_memory` / `list_memories`).
 - `context7` - up-to-date docs for any API you don't own; resolve the library id, then query its docs, before writing against a third-party or version-sensitive surface, never from recall - and through these tools, not a shell fallback (`npx`, a registry `curl`), which answers a different question and leaves the registered server unused.

@@ -10,46 +10,66 @@ Every project trims the stack differently - skills commented out of the manifest
 
 The measurements behind these rules live in `references/evidence.md` - an audit appendix, not a run-time load.
 
-## The run - precheck, inventory, then generate
+## The run - one script, one compose, one write
 
-### 0. PRECHECK - is there anything to capture at all?
-ONE command, before any inventory read:
+`scripts/capabilities-inventory.js` does every mechanical step in ONE node pass (built-ins only,
+nothing to install, no per-skill fork): the precheck, the inventory with a printed COUNT per layer,
+the registered MCP servers, the paste-ready MCP routing rows, the compare verdict and the
+post-write verify. From the project root:
 
 ```bash
-RULE=.cursor/rules/baseline-project-agent-capabilities.mdc
-[ -f "$RULE" ] && { find .cursor/skills .cursor/agents .cursor/rules .cursor/mcp.json .cursor/cursor-stack.stamp \
-  -newer "$RULE" ! -name 'baseline-project-*' ! -name 'project-code-style.mdc' -print 2>/dev/null | head -3; } || echo FIRST
+node .cursor/skills/project-agent-capabilities/scripts/capabilities-inventory.js
 ```
 
-- `FIRST` - no rule yet. Go to step 1; this is the capture the skill exists for.
-- **Empty output** - nothing under the inventory sources has changed since the rule was written.
-  Say so in ONE line naming the rule's `Captured:` date, and STOP. Do not inventory, do not
-  regenerate, do not write. This is the whole point of the step: a run that re-inventories and then
-  reports 'unchanged from the previous capture' has paid the full price for an answer it already had.
-- **Any path printed** - that is the drift. Continue to step 1 and name those paths in the report.
+**Its printed block is the whole inventory.** Re-grepping, re-reading or hand-tallying anything it
+printed is a defect, not diligence - every count and every row of the report comes off one of its
+lines, and a claim with no printed line behind it does not go in the report. It never launders a
+failure into an empty result (`<cmd> || echo none`, banned in `baseline-navigation.mdc`) and never
+pipes through `| head -N`, so 'unreadable' and 'zero' stay different report fields.
 
-Two things the precheck cannot see, and the only two reasons to continue past an empty result: an
-MCP server configured outside this tree (the user-level MCP config changes no file here), and the
-USER may ask for a refresh outright. Either one overrides it - say which one you are acting on.
+One thing the script cannot read, and the one place you still look yourself: the LIVE MCP side.
+Cursor ships no MCP list command, so the script reports what `.cursor/mcp.json` registers and says
+so; the servers whose `mcp_<server>_` tools this session actually shows are visible only to you.
+Check them before any 'not registered' claim - a server configured at the user level has no row in
+that file.
 
-### 1. INVENTORY - read what is actually on disk
-- **Skills**: Glob `.cursor/skills/*/SKILL.md` and EXTRACT the three fields - never dump the frontmatter. One pass, one line per file:
-  `for f in <abs>/.cursor/skills/*/SKILL.md; do printf '%s|%s|%s\n' "$(grep -m1 '^name:' "$f" | cut -d' ' -f2-)" "$(grep -c '^disable-model-invocation: true' "$f")" "$(grep -m1 '^description:' "$f" | cut -c1-160)"; done`
-  A whole-frontmatter dump costs 10-30x the fields. Collect `name`, the FIRST CLAUSE of `description` (see the shape's cap), and whether `disable-model-invocation: true` (those are the slash-only orchestration skills; the rest self-trigger and need no listing).
-- **Seats**: Glob `.cursor/agents/*.md` - collect the names (the dispatch surface; their own descriptions say when each applies).
-- **MCP servers**: read `.cursor/mcp.json` for the registered server names, AND list the MCP servers whose tools the session actually shows. The file is not the whole inventory: a server configured at the user level has no row in it. Never write a NEGATIVE claim about a server class the file cannot see.
-- **Plugins**: Cursor installs plugins through the chat UI (`/add-plugin`) and exposes no list command, so there is no scriptable inventory - omit the plugins line rather than guess.
+### 1. PRECHECK - the script's first lines
+- `PRECHECK: FIRST` - no rule yet. Compose and write; this is the capture the skill exists for.
+- `PRECHECK: empty` - nothing under the inventory sources changed since the rule was written. Say
+  so in ONE line naming the `Captured:` date that line quotes, and STOP. Do not compose, do not
+  write. Two things the precheck cannot see, and the only two reasons to go on: an MCP server
+  configured outside this tree (the user-level config changes no file here), and the USER may ask
+  for a refresh outright. Either overrides it - say which one you are acting on.
+- `PRECHECK: drift - <n> file(s)` - that is the drift. Continue, and name those paths in the report.
 
-Inventory only - nothing is judged, nothing is read beyond frontmatter and config. No dispatch; the whole run is in-session and cheap. Any Bash in this step uses absolute paths or a subshell (`(cd .cursor && ...)`) - a bare `cd` persists into the session's later commands.
+### 2. COMPOSE the body - the verdict authorizes the write
+Read `references/generated-rule-template.md` for the four sections' fill rules, then compose the
+WHOLE body in-session: the block below verbatim, with only its `<...>` slots filled from the
+script's lines. One slot is not a slot - every `<docs-path>` becomes the LITERAL `DOCS ROOT` value
+the script printed, because the generated rule is a deterministic pointer and cannot itself carry
+the placeholder it exists to resolve.
 
-### 2. GENERATE - write .cursor/rules/baseline-project-agent-capabilities.mdc
-A valid always-on rule (`alwaysApply: true` is the ONLY thing that pins a rule into every session; a `description:`-without-globs block is advisory and may never attach), regenerated WHOLESALE each run - it is fully derived, so no upsert, no hand edits to preserve. Wholesale is mechanical, not a mood: COMPOSE the whole body in-session first, then READ the existing file and compare. An edit-in-place keeps stale policy wording the skill has since changed, so the write is always the whole file.
+The rule is a valid ALWAYS-ON rule: `alwaysApply: true` is the only thing that pins a rule into
+every session, and a `description:`-without-globs block is advisory and may never attach.
 
-**Identical? Do not write.** Report `rule unchanged - <N> bytes, not rewritten` and go to step 3. This is not a nicety: an identical rewrite pays a full write for nothing, and the next session pays the changed mtime. Different? Write the composed body over the file in one call - no delete first, one round trip.
+Write the composed body to a scratch file, then run the verdict:
+
+```bash
+node .cursor/skills/project-agent-capabilities/scripts/capabilities-inventory.js --body <that file>
+```
+
+- `COMPARE: identical` - do NOT write. Report `rule unchanged - <N> bytes, not rewritten`, and go
+  to step 3's report. An identical rewrite pays a full write for nothing, and the next session pays
+  the changed mtime.
+- `COMPARE: differs` - write the composed body over the rule in ONE call, the whole file. No
+  in-place edit, no `sed -i`, no partial upsert: an edit keeps stale policy wording the skill has
+  since changed. No delete first - one round trip.
+
+Without a printed `COMPARE: differs` line there is nothing to write.
 
 This skill was renamed from project-capabilities: when a legacy `.cursor/rules/baseline-project-capabilities.mdc` exists, delete it in the same run - this rule supersedes it, and nothing else ever prunes generated rules. Keep it lean (always-on tokens are paid every session and subagent).
 
-The block below is a COPY TARGET, not prose to retype: take it verbatim and fill only the `<...>` slots. One slot is not a slot - every `<docs-path>` in it is replaced with the LITERAL resolved docs root this project uses (the `CURSOR_DOCS_PATH` value, or `.cursor/docs`), because the generated rule is a deterministic pointer and cannot itself carry the placeholder it exists to resolve. Read `references/generated-rule-template.md` now - the fill rules for the three inventory sections and the house routing map the MCP rows are stamped from; the REPORT's `Template:` line is its receipt. The shape:
+The block below is a COPY TARGET, not prose to retype: take it verbatim and fill only the `<...>` slots, per step 2. The REPORT's `Template:` line is the receipt that `references/generated-rule-template.md` was read. The shape:
 
 ```markdown
 ---
